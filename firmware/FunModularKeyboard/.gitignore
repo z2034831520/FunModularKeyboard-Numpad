@@ -1,0 +1,39 @@
+# ============================================
+# PlatformIO build artifacts
+# ============================================
+.pio/
+.pio-*.log
+
+# ============================================
+# Debug / probe / serial capture outputs
+# May contain WiFi passwords, API keys, IPs
+# ============================================
+tools/*.txt
+tools/*.log
+tools/*_output.txt
+tools/*_capture.txt
+tools/*_probe_output.txt
+tools/*_probe_serial.txt
+tools/*_app_log.txt
+tools/*_serial_log.txt
+
+# ============================================
+# Build logs
+# ============================================
+build_check.txt
+build_capture.log
+ha_build.log
+music_player_build.log
+
+# ============================================
+# OS files
+# ============================================
+Thumbs.db
+.DS_Store
+*.swp
+*.swo
+
+# ============================================
+# IDE
+# ============================================
+*.code-workspace

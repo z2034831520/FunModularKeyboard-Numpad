@@ -4,7 +4,18 @@
 
 [![Platform](https://img.shields.io/badge/platform-ESP32--S3-green)](https://www.espressif.com/)
 [![Framework](https://img.shields.io/badge/framework-Arduino-blue)](https://www.arduino.cc/)
-[![License](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
+
+---
+
+<img width="2444" height="1373" alt="屏幕截图 2026-07-19 162423" src="https://github.com/user-attachments/assets/a6944f46-91a1-47f6-a329-ca03bb6be444" />
+
+<img width="2791" height="1857" alt="屏幕截图 2026-07-18 232027" src="https://github.com/user-attachments/assets/8670e7e6-1b32-4f78-a43f-0e52d614776c" />
+
+<img width="1178" height="1762" alt="屏幕截图 2026-07-18 231906" src="https://github.com/user-attachments/assets/400e814f-a2e0-40ae-8332-3e637d6bc0cb" />
+
+<img width="2079" height="1385" alt="屏幕截图 2026-07-18 232058" src="https://github.com/user-attachments/assets/46842f9d-65c4-4469-bbd4-f5d500d36c73" />
+
+<img width="1711" height="983" alt="屏幕截图 2026-07-19 162929" src="https://github.com/user-attachments/assets/fd741ef1-5618-45f0-b17b-afeae2ffd4d2" />
 
 ---
 

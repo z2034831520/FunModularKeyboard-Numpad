@@ -190,8 +190,8 @@ TLV493D               — 3D magnetic sensor
 
 2. Clone the repo and navigate to the main firmware directory:
 ```bash
-git clone https://github.com/yourname/FunModularKeyboard-OPEN.git
-cd FunModularKeyboard-OPEN/firmware/FunModularKeyboard
+git clone https://github.com/ZhiFun/FunModularKeyboard.git
+cd FunModularKeyboard/firmware/FunModularKeyboard
 ```
 
 3. Configure WiFi and Baidu Speech API credentials (edit `data/config.ini` or configure via serial)

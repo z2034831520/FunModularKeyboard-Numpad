@@ -13,7 +13,7 @@ extern "C" {
 // SCREEN: ui_MainScreen
 extern void ui_MainScreen_screen_init(void);
 extern void ui_MainScreen_screen_destroy(void);
-extern void ui_MainScreen_set_work_mode(char *mode);
+extern void ui_MainScreen_set_work_mode(const char *mode);
 extern void ui_MainScreen_set_rgb_light(char *value);
 extern void ui_MainScreen_set_tft_light(char *value); 
 extern void ui_MainScreen_set_host_connection(bool connected);

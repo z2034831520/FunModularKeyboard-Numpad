@@ -459,7 +459,7 @@ void ui_MainScreen_screen_init(void)
 
 }
 
-void ui_MainScreen_set_work_mode(char *mode) {
+void ui_MainScreen_set_work_mode(const char *mode) {
     lv_label_set_text(ui_LabelWorkmode, mode);
 }
 

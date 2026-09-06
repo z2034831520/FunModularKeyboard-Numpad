@@ -5,6 +5,7 @@
 
 #include "ui.h"
 #include "ui_helpers.h"
+#include "ui_StatusBar.h"
 
 ///////////////////// VARIABLES ////////////////////
 

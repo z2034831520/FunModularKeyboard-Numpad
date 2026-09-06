@@ -12,14 +12,22 @@
 #include "Speaker.h"
 #include "RotaryEncoder.h"
 #include "LogManager.h"
+#ifndef ENABLE_EXTENSION_MODULES
+#define ENABLE_EXTENSION_MODULES 1
+#endif
+
+#if ENABLE_EXTENSION_MODULES
 #include "modules/I2CMasterController.h"
+#endif
 #include <ArduinoJson.h>
 #include "SerialProtocol.h"
 #include "IKeyboard.h"
 #include "VoiceRecognizer.h"
 
-#define MODA_I2C_SLAVE_ADDR   0x06
-#define MODB_I2C_SLAVE_ADDR   0x08
+#if ENABLE_EXTENSION_MODULES
+#define MODA_I2C_SLAVE_ADDR 0x06
+#define MODB_I2C_SLAVE_ADDR 0x08
+#endif
 
 class MainTask : public Task<MainTask> {
     friend class Task<MainTask>;
@@ -108,6 +116,7 @@ public:
         {"RWin", 0x87}, {"RightWin", 0x87}, {"RightWindows", 0x87}
     };
 
+#if ENABLE_EXTENSION_MODULES
     typedef struct ModAData {
         // Slider1:[0][1000][50],
         // Slider2:[0][1000][150],
@@ -129,6 +138,7 @@ public:
         uint8_t knob3_press;//0:idle松开且稳定,1:DEBOUNCE_PRESS刚按下，等待消抖,2:PRESSED已确认按下,3:DEBOUNCE_RELEASE松开检测，等待消抖
         uint8_t index;           
     } ModAData;
+#endif
 
     // enum FUNCTION_KEY {
     //     KEY_MEDIA_NEXT_TRACK = 1,
@@ -202,6 +212,7 @@ private:
     bool hasMappedOutput(const KeyMapping& mapping) const;
     void triggerMappedInput(const KeyMapping& mapping);
     bool handleSpecialInputEvent(const String& input_id, uint8_t fallbackDisplayAction = 0);
+#if ENABLE_EXTENSION_MODULES
     void handleModuleKnobInput(const char* left_input_id,
                                const char* right_input_id,
                                const char* click_input_id,
@@ -216,6 +227,7 @@ private:
                            uint32_t current_value,
                            uint32_t range_min,
                            uint32_t range_max);
+#endif
     void updateVoiceTriggerBitFromKeymap();
     void startVoiceCapture();
     void finishVoiceCapture();
@@ -237,7 +249,9 @@ private:
     void SendKeyMappedProfileUi();
     void sendCurrentProfileState(int seq = 0);
     //void SendSpectrumDisplay(float* bands, int numBands);
+#if ENABLE_EXTENSION_MODULES
     void SendModuleStatus(MODULESTATUS status);
+#endif
     //void sendDisplayUpdate();
     bool ConnectToWiFi(const String& ssid, const String& password);
     void scheduleWiFiConnectAttempt(bool immediate = false);
@@ -266,8 +280,10 @@ private:
 
     void onCommandReceived(int cmd, int seq, JsonObject data);
     void onKeyEvent(int physicalKey, int logicalKey, bool pressed);
+#if ENABLE_EXTENSION_MODULES
     bool parseModADataOptimized(const char* input, ModAData& data);
     void handleModData(String data);
+#endif
 
     MatrixScanner scanner_;
     std::unique_ptr<IKeyboard> currentKeyboard_{nullptr};
@@ -277,9 +293,12 @@ private:
     Speaker speaker_;
     // Mic mic_;
     RotaryEncoder rotaryEncoder_;
+#if ENABLE_EXTENSION_MODULES
     I2CMasterController i2cMaster_;
+#endif
     SerialProtocol protocol_;
     bool isNeedUpdateDisplay{0};
+#if ENABLE_EXTENSION_MODULES
     bool isNeedI2cRead{0};
     int lastSlider1Value_{-1};
     int lastSlider2Value_{-1};
@@ -291,6 +310,7 @@ private:
     uint8_t lastKnob1Press_{0};
     uint8_t lastKnob2Press_{0};
     uint8_t lastKnob3Press_{0};
+#endif
     uint32_t lastStableKeyState_{0};
     MusicPlayerInfo musicPlayerState_{};
     uint32_t lastMusicUiUpdateMs_{0};
@@ -308,9 +328,11 @@ private:
     uint32_t tcpDisconnectedSinceMs_{0};
     bool boost5VPinInitialized_{false};
     bool boost5VEnabled_{true};
+#if ENABLE_EXTENSION_MODULES
     ModAData modAData_;
     MODULESTATUS status_modA_;
-    MODULESTATUS status_modB_;   
+    MODULESTATUS status_modB_;
+#endif
     VoiceRecognizer voiceRecognizer_;
     // AudioAnalyzer audioAnalyzer_;
 };

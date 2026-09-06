@@ -1,3 +1,9 @@
+#ifndef ENABLE_EXTENSION_MODULES
+#define ENABLE_EXTENSION_MODULES 1
+#endif
+
+#if ENABLE_EXTENSION_MODULES
+
 #include "I2CMasterController.h"
 
 I2CMasterController::I2CMasterController(i2c_port_t port, gpio_num_t sda_pin, 
@@ -208,3 +214,5 @@ String I2CMasterController::getDeviceType(uint8_t address) {
     
     return "UNKNOWN";
 }
+
+#endif

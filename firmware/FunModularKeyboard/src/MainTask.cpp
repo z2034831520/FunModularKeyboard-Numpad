@@ -18,172 +18,213 @@
 /**************************************************************************/
 // 通过网络获取时间
 // NTP 配置
-const char* ntpServer = "pool.ntp.org";  // NTP 服务器
-const long gmtOffset_sec = 8 * 3600;     // 北京时间 GMT+8
-const int daylightOffset_sec = 0;        // 夏令时偏移（中国不使用夏令时）
+const char *ntpServer = "pool.ntp.org"; // NTP 服务器
+const long gmtOffset_sec = 8 * 3600;    // 北京时间 GMT+8
+const int daylightOffset_sec = 0;       // 夏令时偏移（中国不使用夏令时）
 
 // 创建 NTPClient 实例
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, ntpServer, gmtOffset_sec, daylightOffset_sec);
 
-namespace {
-constexpr const char* kVoiceTriggerFunctionKey = "KEY_FUNCTION_ASR";
-constexpr uint8_t kBoost5VEnablePin = 3;
-constexpr uint32_t kSettingsUiKey1Bit = (1UL << 0);
-constexpr uint32_t kSettingsUiKey2Bit = (1UL << 1);
-constexpr uint32_t kSettingsUiOverrideMask = kSettingsUiKey1Bit | kSettingsUiKey2Bit;
-constexpr uint32_t kWifiRetryIntervalMs = 5000;
-constexpr uint32_t kWifiConnectTimeoutMs = 10000;
-constexpr const char* kProfileIcons[CONFIG_PROFILE_COUNT] = {
-    LV_SYMBOL_HOME,
-    LV_SYMBOL_AUDIO,
-    LV_SYMBOL_EDIT,
-    LV_SYMBOL_SETTINGS,
-    LV_SYMBOL_DIRECTORY,
-    LV_SYMBOL_IMAGE,
-    LV_SYMBOL_BELL,
-    LV_SYMBOL_WIFI
-};
+namespace
+{
+    constexpr const char *kVoiceTriggerFunctionKey = "KEY_FUNCTION_ASR";
+    constexpr uint8_t kBoost5VEnablePin = 3;
+    constexpr uint32_t kSettingsUiKey1Bit = (1UL << 0);
+    constexpr uint32_t kSettingsUiKey2Bit = (1UL << 1);
+    constexpr uint32_t kSettingsUiOverrideMask = kSettingsUiKey1Bit | kSettingsUiKey2Bit;
+    constexpr uint32_t kWifiRetryIntervalMs = 5000;
+    constexpr uint32_t kWifiConnectTimeoutMs = 10000;
+    constexpr const char *kProfileIcons[CONFIG_PROFILE_COUNT] = {
+        LV_SYMBOL_HOME,
+        LV_SYMBOL_AUDIO,
+        LV_SYMBOL_EDIT,
+        LV_SYMBOL_SETTINGS,
+        LV_SYMBOL_DIRECTORY,
+        LV_SYMBOL_IMAGE,
+        LV_SYMBOL_BELL,
+        LV_SYMBOL_WIFI};
 
-String normalizeFunctionKey(String key) {
-    key.trim();
-    if (key.startsWith("F:")) {
-        key = key.substring(2);
+    String normalizeFunctionKey(String key)
+    {
         key.trim();
+        if (key.startsWith("F:"))
+        {
+            key = key.substring(2);
+            key.trim();
+        }
+        return key;
     }
-    return key;
-}
 
-String buildKeySequenceString(const uint8_t* keys, uint8_t count) {
-    return buildNamedKeySequence(keys, count);
-}
+    String buildKeySequenceString(const uint8_t *keys, uint8_t count)
+    {
+        return buildNamedKeySequence(keys, count);
+    }
 
-bool hasNonAsciiUtf8(const String& text) {
-    for (size_t i = 0; i < text.length(); ++i) {
-        if (static_cast<uint8_t>(text[i]) > 0x7F) {
-            return true;
+    bool hasNonAsciiUtf8(const String &text)
+    {
+        for (size_t i = 0; i < text.length(); ++i)
+        {
+            if (static_cast<uint8_t>(text[i]) > 0x7F)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    uint32_t readBigEndian32(const uint8_t *bytes)
+    {
+        return (static_cast<uint32_t>(bytes[0]) << 24U) |
+               (static_cast<uint32_t>(bytes[1]) << 16U) |
+               (static_cast<uint32_t>(bytes[2]) << 8U) |
+               static_cast<uint32_t>(bytes[3]);
+    }
+
+    bool isPng48x48(const uint8_t *bytes, size_t length)
+    {
+        static constexpr uint8_t kPngSignature[8] = {
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
+
+        if (bytes == nullptr || length < 24)
+        {
+            return false;
+        }
+        if (memcmp(bytes, kPngSignature, sizeof(kPngSignature)) != 0)
+        {
+            return false;
+        }
+        if (memcmp(bytes + 12, "IHDR", 4) != 0)
+        {
+            return false;
+        }
+
+        const uint32_t width = readBigEndian32(bytes + 16);
+        const uint32_t height = readBigEndian32(bytes + 20);
+        return width == 48 && height == 48;
+    }
+
+    void copyUtf8Truncated(char *destination, size_t destinationSize, const String &source)
+    {
+        if (destination == nullptr || destinationSize == 0)
+        {
+            return;
+        }
+
+        const char *input = source.c_str();
+        const size_t inputLength = strlen(input);
+        size_t inputIndex = 0;
+        size_t outputIndex = 0;
+
+        while (inputIndex < inputLength && outputIndex < destinationSize - 1)
+        {
+            const uint8_t leadByte = static_cast<uint8_t>(input[inputIndex]);
+            size_t charLength = 1;
+
+            if ((leadByte & 0x80U) == 0x00U)
+            {
+                charLength = 1;
+            }
+            else if ((leadByte & 0xE0U) == 0xC0U)
+            {
+                charLength = 2;
+            }
+            else if ((leadByte & 0xF0U) == 0xE0U)
+            {
+                charLength = 3;
+            }
+            else if ((leadByte & 0xF8U) == 0xF0U)
+            {
+                charLength = 4;
+            }
+
+            if (inputIndex + charLength > inputLength || outputIndex + charLength > destinationSize - 1)
+            {
+                break;
+            }
+
+            memcpy(destination + outputIndex, input + inputIndex, charLength);
+            outputIndex += charLength;
+            inputIndex += charLength;
+        }
+
+        destination[outputIndex] = '\0';
+    }
+
+    const char *wifiStatusToText(wl_status_t status)
+    {
+        switch (status)
+        {
+        case WL_IDLE_STATUS:
+            return "IDLE";
+        case WL_NO_SSID_AVAIL:
+            return "NO_SSID";
+        case WL_SCAN_COMPLETED:
+            return "SCAN_COMPLETED";
+        case WL_CONNECTED:
+            return "CONNECTED";
+        case WL_CONNECT_FAILED:
+            return "CONNECT_FAILED";
+        case WL_CONNECTION_LOST:
+            return "CONNECTION_LOST";
+        case WL_DISCONNECTED:
+            return "DISCONNECTED";
+        case WL_NO_SHIELD:
+            return "NO_SHIELD";
+        default:
+            return "UNKNOWN";
         }
     }
-    return false;
-}
 
-uint32_t readBigEndian32(const uint8_t* bytes) {
-    return (static_cast<uint32_t>(bytes[0]) << 24U) |
-           (static_cast<uint32_t>(bytes[1]) << 16U) |
-           (static_cast<uint32_t>(bytes[2]) << 8U) |
-           static_cast<uint32_t>(bytes[3]);
-}
+    void logHeapSnapshot(const char *stage)
+    {
+        LOG_INFO("Heap", "%s | free=%u min=%u largest=%u psram=%u",
+                 stage,
+                 ESP.getFreeHeap(),
+                 ESP.getMinFreeHeap(),
+                 heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+                 ESP.getFreePsram());
+    }
 
-bool isPng48x48(const uint8_t* bytes, size_t length) {
-    static constexpr uint8_t kPngSignature[8] = {
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A
+    String simplifyDisplayToken(const String &token)
+    {
+        String result = token;
+        result.trim();
+        if (result.startsWith("KEY_MEDIA_"))
+        {
+            return result.substring(String("KEY_MEDIA_").length());
+        }
+        if (result.startsWith("KEY_"))
+        {
+            return result.substring(String("KEY_").length());
+        }
+        if (result.startsWith("NUM_") && result.length() == 5)
+        {
+            return result.substring(4);
+        }
+        if (result.length() == 1)
+        {
+            result.toUpperCase();
+        }
+        return result;
+    }
+
+    struct PendingUiSettingsRequest
+    {
+        bool pending{false};
+        bool persist{false};
+        ui_settings_snapshot_t snapshot{};
     };
 
-    if (bytes == nullptr || length < 24) {
-        return false;
-    }
-    if (memcmp(bytes, kPngSignature, sizeof(kPngSignature)) != 0) {
-        return false;
-    }
-    if (memcmp(bytes + 12, "IHDR", 4) != 0) {
-        return false;
-    }
-
-    const uint32_t width = readBigEndian32(bytes + 16);
-    const uint32_t height = readBigEndian32(bytes + 20);
-    return width == 48 && height == 48;
+    portMUX_TYPE g_ui_settings_lock = portMUX_INITIALIZER_UNLOCKED;
+    PendingUiSettingsRequest g_ui_settings_request{};
+    MainTask *g_main_task = nullptr;
 }
 
-void copyUtf8Truncated(char* destination, size_t destinationSize, const String& source) {
-    if (destination == nullptr || destinationSize == 0) {
-        return;
-    }
-
-    const char* input = source.c_str();
-    const size_t inputLength = strlen(input);
-    size_t inputIndex = 0;
-    size_t outputIndex = 0;
-
-    while (inputIndex < inputLength && outputIndex < destinationSize - 1) {
-        const uint8_t leadByte = static_cast<uint8_t>(input[inputIndex]);
-        size_t charLength = 1;
-
-        if ((leadByte & 0x80U) == 0x00U) {
-            charLength = 1;
-        } else if ((leadByte & 0xE0U) == 0xC0U) {
-            charLength = 2;
-        } else if ((leadByte & 0xF0U) == 0xE0U) {
-            charLength = 3;
-        } else if ((leadByte & 0xF8U) == 0xF0U) {
-            charLength = 4;
-        }
-
-        if (inputIndex + charLength > inputLength || outputIndex + charLength > destinationSize - 1) {
-            break;
-        }
-
-        memcpy(destination + outputIndex, input + inputIndex, charLength);
-        outputIndex += charLength;
-        inputIndex += charLength;
-    }
-
-    destination[outputIndex] = '\0';
-}
-
-const char* wifiStatusToText(wl_status_t status) {
-    switch (status) {
-        case WL_IDLE_STATUS: return "IDLE";
-        case WL_NO_SSID_AVAIL: return "NO_SSID";
-        case WL_SCAN_COMPLETED: return "SCAN_COMPLETED";
-        case WL_CONNECTED: return "CONNECTED";
-        case WL_CONNECT_FAILED: return "CONNECT_FAILED";
-        case WL_CONNECTION_LOST: return "CONNECTION_LOST";
-        case WL_DISCONNECTED: return "DISCONNECTED";
-        case WL_NO_SHIELD: return "NO_SHIELD";
-        default: return "UNKNOWN";
-    }
-}
-
-void logHeapSnapshot(const char* stage) {
-    LOG_INFO("Heap", "%s | free=%u min=%u largest=%u psram=%u",
-             stage,
-             ESP.getFreeHeap(),
-             ESP.getMinFreeHeap(),
-             heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
-             ESP.getFreePsram());
-}
-
-String simplifyDisplayToken(const String& token) {
-    String result = token;
-    result.trim();
-    if (result.startsWith("KEY_MEDIA_")) {
-        return result.substring(String("KEY_MEDIA_").length());
-    }
-    if (result.startsWith("KEY_")) {
-        return result.substring(String("KEY_").length());
-    }
-    if (result.startsWith("NUM_") && result.length() == 5) {
-        return result.substring(4);
-    }
-    if (result.length() == 1) {
-        result.toUpperCase();
-    }
-    return result;
-}
-
-struct PendingUiSettingsRequest {
-    bool pending{false};
-    bool persist{false};
-    ui_settings_snapshot_t snapshot{};
-};
-
-portMUX_TYPE g_ui_settings_lock = portMUX_INITIALIZER_UNLOCKED;
-PendingUiSettingsRequest g_ui_settings_request{};
-MainTask* g_main_task = nullptr;
-}
-
-extern "C" bool ui_settings_request_apply(const ui_settings_snapshot_t* snapshot) {
-    if (snapshot == nullptr || g_main_task == nullptr) {
+extern "C" bool ui_settings_request_apply(const ui_settings_snapshot_t *snapshot)
+{
+    if (snapshot == nullptr || g_main_task == nullptr)
+    {
         return false;
     }
 
@@ -195,8 +236,10 @@ extern "C" bool ui_settings_request_apply(const ui_settings_snapshot_t* snapshot
     return true;
 }
 
-extern "C" bool ui_settings_request_save(const ui_settings_snapshot_t* snapshot) {
-    if (snapshot == nullptr || g_main_task == nullptr) {
+extern "C" bool ui_settings_request_save(const ui_settings_snapshot_t *snapshot)
+{
+    if (snapshot == nullptr || g_main_task == nullptr)
+    {
         return false;
     }
 
@@ -210,17 +253,22 @@ extern "C" bool ui_settings_request_save(const ui_settings_snapshot_t* snapshot)
 
 /**************************************************************************/
 
-bool MainTask::hasMappedOutput(const KeyMapping& mapping) const {
+bool MainTask::hasMappedOutput(const KeyMapping &mapping) const
+{
     return !mapping.function_key.isEmpty() || mapping.normal_key_count > 0 || mapping.macros_key_count > 0;
 }
 
-void MainTask::reportPhysicalKeyEdges(uint32_t edgeMask, bool pressed) {
-    if (edgeMask == 0) {
+void MainTask::reportPhysicalKeyEdges(uint32_t edgeMask, bool pressed)
+{
+    if (edgeMask == 0)
+    {
         return;
     }
 
-    for (int i = 0; i < PHYSICAL_KEY_NUM; ++i) {
-        if ((edgeMask & (1UL << i)) == 0) {
+    for (int i = 0; i < PHYSICAL_KEY_NUM; ++i)
+    {
+        if ((edgeMask & (1UL << i)) == 0)
+        {
             continue;
         }
 
@@ -228,85 +276,109 @@ void MainTask::reportPhysicalKeyEdges(uint32_t edgeMask, bool pressed) {
     }
 }
 
-void MainTask::triggerMappedInput(const KeyMapping& mapping) {
-    if (!currentKeyboard_ || !hasMappedOutput(mapping)) {
+void MainTask::triggerMappedInput(const KeyMapping &mapping)
+{
+    if (!currentKeyboard_ || !hasMappedOutput(mapping))
+    {
         return;
     }
 
-    for (uint8_t i = 0; i < mapping.macros_key_count; ++i) {
+    for (uint8_t i = 0; i < mapping.macros_key_count; ++i)
+    {
         currentKeyboard_->press(mapping.macros_key[i]);
     }
 
     bool functionPressed = false;
-    if (!mapping.function_key.isEmpty() && !mapping.function_key.equals(kVoiceTriggerFunctionKey)) {
+    if (!mapping.function_key.isEmpty() && !mapping.function_key.equals(kVoiceTriggerFunctionKey))
+    {
         currentKeyboard_->press(mapping.function_key);
         functionPressed = true;
-    } else {
-        for (uint8_t i = 0; i < mapping.normal_key_count; ++i) {
+    }
+    else
+    {
+        for (uint8_t i = 0; i < mapping.normal_key_count; ++i)
+        {
             currentKeyboard_->press(mapping.normal_key[i]);
         }
     }
 
-    if (functionPressed) {
+    if (functionPressed)
+    {
         currentKeyboard_->release(mapping.function_key);
-    } else {
-        for (int i = mapping.normal_key_count - 1; i >= 0; --i) {
+    }
+    else
+    {
+        for (int i = mapping.normal_key_count - 1; i >= 0; --i)
+        {
             currentKeyboard_->release(mapping.normal_key[i]);
         }
     }
 
-    for (int i = mapping.macros_key_count - 1; i >= 0; --i) {
+    for (int i = mapping.macros_key_count - 1; i >= 0; --i)
+    {
         currentKeyboard_->release(mapping.macros_key[i]);
     }
 }
 
-bool MainTask::handleSpecialInputEvent(const String& input_id, uint8_t fallbackDisplayAction) {
+bool MainTask::handleSpecialInputEvent(const String &input_id, uint8_t fallbackDisplayAction)
+{
     protocol_.sendInputActivity(0, input_id, true);
 
     KeyMapping mapping = configuration_.getSpecialInputMapping(input_id);
-    if (hasMappedOutput(mapping)) {
+    if (hasMappedOutput(mapping))
+    {
         triggerMappedInput(mapping);
         return true;
     }
 
-    if (fallbackDisplayAction != 0) {
+    if (fallbackDisplayAction != 0)
+    {
         SendDisplayAction(fallbackDisplayAction);
     }
 
     return false;
 }
 
-void MainTask::handleModuleKnobInput(const char* left_input_id,
-                                     const char* right_input_id,
-                                     const char* click_input_id,
+#if ENABLE_EXTENSION_MODULES
+void MainTask::handleModuleKnobInput(const char *left_input_id,
+                                     const char *right_input_id,
+                                     const char *click_input_id,
                                      uint8_t status,
                                      uint8_t press,
-                                     uint8_t& last_status,
-                                     uint8_t& last_press) {
-    if (status != 0 && status != last_status) {
-        if (status == 1) {
+                                     uint8_t &last_status,
+                                     uint8_t &last_press)
+{
+    if (status != 0 && status != last_status)
+    {
+        if (status == 1)
+        {
             handleSpecialInputEvent(String(left_input_id));
-        } else if (status == 2) {
+        }
+        else if (status == 2)
+        {
             handleSpecialInputEvent(String(right_input_id));
         }
     }
     last_status = status;
 
-    if (press != 0 && last_press == 0) {
+    if (press != 0 && last_press == 0)
+    {
         handleSpecialInputEvent(String(click_input_id));
     }
     last_press = press;
 }
 
-void MainTask::handleSliderInput(const char* left_input_id,
-                                 const char* right_input_id,
-                                 int& last_value,
-                                 int& accumulated_delta,
+void MainTask::handleSliderInput(const char *left_input_id,
+                                 const char *right_input_id,
+                                 int &last_value,
+                                 int &accumulated_delta,
                                  uint32_t current_value,
                                  uint32_t range_min,
-                                 uint32_t range_max) {
+                                 uint32_t range_max)
+{
     const int current = static_cast<int>(current_value);
-    if (last_value < 0) {
+    if (last_value < 0)
+    {
         last_value = current;
         accumulated_delta = 0;
         return;
@@ -315,7 +387,8 @@ void MainTask::handleSliderInput(const char* left_input_id,
     const int delta = current - last_value;
     last_value = current;
 
-    if (delta == 0) {
+    if (delta == 0)
+    {
         return;
     }
 
@@ -323,33 +396,40 @@ void MainTask::handleSliderInput(const char* left_input_id,
     const int stepThreshold = max(12, static_cast<int>(range / 30));
 
     accumulated_delta += delta;
-    while (accumulated_delta >= stepThreshold) {
+    while (accumulated_delta >= stepThreshold)
+    {
         handleSpecialInputEvent(String(right_input_id));
         accumulated_delta -= stepThreshold;
     }
-    while (accumulated_delta <= -stepThreshold) {
+    while (accumulated_delta <= -stepThreshold)
+    {
         handleSpecialInputEvent(String(left_input_id));
         accumulated_delta += stepThreshold;
     }
 }
 
 // 连接 WiFi
-bool MainTask::ConnectToWiFi(const String& ssid, const String& password) {
+#endif
+
+bool MainTask::ConnectToWiFi(const String &ssid, const String &password)
+{
     String ssidTrimmed = ssid;
     String passwordTrimmed = password;
     ssidTrimmed.trim();
     passwordTrimmed.trim();
 
-    LOG_DEBUG("Log","start connect WiFi:");
+    LOG_DEBUG("Log", "start connect WiFi:");
     LOG_DEBUG("Log", ssidTrimmed);
 
-    if (ssidTrimmed.isEmpty()) {
+    if (ssidTrimmed.isEmpty())
+    {
         LOG_ERROR("Log", "WiFi SSID is empty");
         wifiReconnectActive_ = false;
         return false;
     }
 
-    if (WiFi.status() == WL_CONNECTED) {
+    if (WiFi.status() == WL_CONNECTED)
+    {
         LOG_DEBUG("Log", "WiFi already connected");
         wifiReconnectActive_ = true;
         wifiConnectAttemptStartedMs_ = 0;
@@ -369,7 +449,8 @@ bool MainTask::ConnectToWiFi(const String& ssid, const String& password) {
     wifiConnectAttemptStartedMs_ = millis();
     wifiNextRetryAtMs_ = wifiConnectAttemptStartedMs_ + kWifiRetryIntervalMs;
 
-    if (beginStatus == WL_CONNECT_FAILED || beginStatus == WL_NO_SHIELD) {
+    if (beginStatus == WL_CONNECT_FAILED || beginStatus == WL_NO_SHIELD)
+    {
         LOG_ERROR("Log", "WiFi begin failed immediately, status=%s(%d)", wifiStatusToText(beginStatus), beginStatus);
         WiFi.disconnect(false, false);
         wifiConnectAttemptStartedMs_ = 0;
@@ -380,14 +461,17 @@ bool MainTask::ConnectToWiFi(const String& ssid, const String& password) {
     return true;
 }
 
-void MainTask::scheduleWiFiConnectAttempt(bool immediate) {
-    if (!configuration_.settings_.wifi_switch) {
+void MainTask::scheduleWiFiConnectAttempt(bool immediate)
+{
+    if (!configuration_.settings_.wifi_switch)
+    {
         return;
     }
 
     String ssid = configuration_.settings_.wifi_ssid;
     ssid.trim();
-    if (ssid.isEmpty()) {
+    if (ssid.isEmpty())
+    {
         LOG_WARNING("Log", "WiFi switch enabled but SSID is empty, skip reconnect scheduling");
         wifiReconnectActive_ = false;
         wifiConnectAttemptStartedMs_ = 0;
@@ -400,7 +484,8 @@ void MainTask::scheduleWiFiConnectAttempt(bool immediate) {
     wifiNextRetryAtMs_ = immediate ? 0 : millis() + kWifiRetryIntervalMs;
 }
 
-void MainTask::stopWiFiReconnect() {
+void MainTask::stopWiFiReconnect()
+{
     wifiReconnectActive_ = false;
     wifiWasConnected_ = false;
     wifiConnectAttemptStartedMs_ = 0;
@@ -410,24 +495,30 @@ void MainTask::stopWiFiReconnect() {
     protocol_.disableTcpClient();
 }
 
-void MainTask::onWiFiConnected() {
+void MainTask::onWiFiConnected()
+{
     LOG_INFO("Log", "WiFi connected, IP=%s, RSSI=%d", WiFi.localIP().toString().c_str(), WiFi.RSSI());
     wifiConnectAttemptStartedMs_ = 0;
     wifiNextRetryAtMs_ = 0;
     updateProtocolTcpEndpoint();
-    if (SyncTimeFromNTP()) {
+    if (SyncTimeFromNTP())
+    {
         LOG_DEBUG("Log", "SyncTimeFromNTP sucess!");
     }
     reconcileVoiceRuntimeState();
 }
 
-void MainTask::processWiFiReconnect(uint32_t nowMs) {
+void MainTask::processWiFiReconnect(uint32_t nowMs)
+{
     constexpr uint32_t kTcpRecoveryWifiResetMs = 15000;
 
-    if (!configuration_.settings_.wifi_switch || currentWorkMode_ == Configuration::BLUETOOTH_KEYBOARD_MODE) {
-        if (wifiWasConnected_ || WiFi.getMode() != WIFI_OFF) {
+    if (!configuration_.settings_.wifi_switch || currentWorkMode_ == Configuration::BLUETOOTH_KEYBOARD_MODE)
+    {
+        if (wifiWasConnected_ || WiFi.getMode() != WIFI_OFF)
+        {
             stopWiFiReconnect();
-            if (currentWorkMode_ == Configuration::BLUETOOTH_KEYBOARD_MODE) {
+            if (currentWorkMode_ == Configuration::BLUETOOTH_KEYBOARD_MODE)
+            {
                 LOG_WARNING("Log", "WiFi disabled in BLE mode due memory limits");
             }
         }
@@ -435,19 +526,27 @@ void MainTask::processWiFiReconnect(uint32_t nowMs) {
     }
 
     const wl_status_t status = WiFi.status();
-    if (status == WL_CONNECTED) {
-        if (!wifiWasConnected_) {
+    if (status == WL_CONNECTED)
+    {
+        if (!wifiWasConnected_)
+        {
             wifiWasConnected_ = true;
             tcpDisconnectedSinceMs_ = 0;
             onWiFiConnected();
         }
 
-        if (configuration_.settings_.connect_host) {
-            if (protocol_.isTcpConnected()) {
+        if (configuration_.settings_.connect_host)
+        {
+            if (protocol_.isTcpConnected())
+            {
                 tcpDisconnectedSinceMs_ = 0;
-            } else if (tcpDisconnectedSinceMs_ == 0) {
+            }
+            else if (tcpDisconnectedSinceMs_ == 0)
+            {
                 tcpDisconnectedSinceMs_ = nowMs;
-            } else if (nowMs - tcpDisconnectedSinceMs_ >= kTcpRecoveryWifiResetMs) {
+            }
+            else if (nowMs - tcpDisconnectedSinceMs_ >= kTcpRecoveryWifiResetMs)
+            {
                 LOG_WARNING("Log", "TCP remained disconnected for %u ms, forcing WiFi reconnect", kTcpRecoveryWifiResetMs);
                 protocol_.disableTcpClient();
                 WiFi.disconnect(false, false);
@@ -456,13 +555,16 @@ void MainTask::processWiFiReconnect(uint32_t nowMs) {
                 wifiNextRetryAtMs_ = nowMs + kWifiRetryIntervalMs;
                 tcpDisconnectedSinceMs_ = 0;
             }
-        } else {
+        }
+        else
+        {
             tcpDisconnectedSinceMs_ = 0;
         }
         return;
     }
 
-    if (wifiWasConnected_) {
+    if (wifiWasConnected_)
+    {
         wifiWasConnected_ = false;
         protocol_.disableTcpClient();
         tcpDisconnectedSinceMs_ = 0;
@@ -470,13 +572,16 @@ void MainTask::processWiFiReconnect(uint32_t nowMs) {
         LOG_WARNING("Log", "WiFi disconnected, status=%s(%d)", wifiStatusToText(status), status);
     }
 
-    if (!wifiReconnectActive_) {
+    if (!wifiReconnectActive_)
+    {
         return;
     }
 
-    if (wifiConnectAttemptStartedMs_ != 0) {
+    if (wifiConnectAttemptStartedMs_ != 0)
+    {
         if (status == WL_CONNECT_FAILED || status == WL_NO_SHIELD || status == WL_NO_SSID_AVAIL ||
-            nowMs - wifiConnectAttemptStartedMs_ >= kWifiConnectTimeoutMs) {
+            nowMs - wifiConnectAttemptStartedMs_ >= kWifiConnectTimeoutMs)
+        {
             LOG_WARNING("Log", "WiFi attempt failed, status=%s(%d)", wifiStatusToText(status), status);
             WiFi.disconnect(false, false);
             wifiConnectAttemptStartedMs_ = 0;
@@ -485,75 +590,92 @@ void MainTask::processWiFiReconnect(uint32_t nowMs) {
         return;
     }
 
-    if (nowMs < wifiNextRetryAtMs_) {
+    if (nowMs < wifiNextRetryAtMs_)
+    {
         return;
     }
 
-    if (!ConnectToWiFi(configuration_.settings_.wifi_ssid, configuration_.settings_.wifi_password)) {
+    if (!ConnectToWiFi(configuration_.settings_.wifi_ssid, configuration_.settings_.wifi_password))
+    {
         wifiNextRetryAtMs_ = nowMs + kWifiRetryIntervalMs;
     }
 }
 
-
-void MainTask::handleKeyEvent(uint32_t key_value) {
-    if (!currentKeyboard_) {
+void MainTask::handleKeyEvent(uint32_t key_value)
+{
+    if (!currentKeyboard_)
+    {
         LOG_ERROR("Log", "No keyboard initialized");
         return;
     }
-    
+
     // 检查键盘连接状态
-    if (!currentKeyboard_->isConnected()) {
+    if (!currentKeyboard_->isConnected())
+    {
         static uint32_t last_warning_time = 0;
         uint32_t current_time = millis();
-        
+
         // 限制警告频率，避免日志刷屏
-        if (current_time - last_warning_time > 5000) {
-            if (currentWorkMode_ == Configuration::WIRED_KEYBOARD_MODE) {
+        if (current_time - last_warning_time > 5000)
+        {
+            if (currentWorkMode_ == Configuration::WIRED_KEYBOARD_MODE)
+            {
                 LOG_WARNING("Log", "USB keyboard not connected to host - keys ignored");
-            } else if (currentWorkMode_ == Configuration::BLUETOOTH_KEYBOARD_MODE) {
+            }
+            else if (currentWorkMode_ == Configuration::BLUETOOTH_KEYBOARD_MODE)
+            {
                 LOG_WARNING("Log", "BLE keyboard not connected to host - keys ignored");
             }
             last_warning_time = current_time;
         }
         return;
     }
-    
+
     uint32_t temp_key_value = key_value;
 
-    //同步给LED进行点击显示
+    // 同步给LED进行点击显示
     SendDisplayKeyInput(key_value);
 
     // 先释放所有按键，然后按新按下的键
     currentKeyboard_->releaseAll();
-    
-    //主键盘按键处理
-    for (int i = 0; i < PHYSICAL_KEY_NUM; i++) {
-        if (temp_key_value & 0x01) {
+
+    // 主键盘按键处理
+    for (int i = 0; i < PHYSICAL_KEY_NUM; i++)
+    {
+        if (temp_key_value & 0x01)
+        {
             // 按下按键
-            KeyMapping mapping = configuration_.getKeyMapping(i+1);
+            KeyMapping mapping = configuration_.getKeyMapping(i + 1);
             // 先处理宏键
-            if (mapping.macros_key_count > 0) {
-                for (int n = 0; n < mapping.macros_key_count; n++) {
+            if (mapping.macros_key_count > 0)
+            {
+                for (int n = 0; n < mapping.macros_key_count; n++)
+                {
                     currentKeyboard_->press(mapping.macros_key[n]);
-                    LOG_DEBUG("Log","[Keyboard] Set Macros Key 0x%02X", mapping.macros_key[n]);
+                    LOG_DEBUG("Log", "[Keyboard] Set Macros Key 0x%02X", mapping.macros_key[n]);
                 }
             }
 
             // 再处理普通键
-            if (mapping.function_key.isEmpty()) {
-                if (mapping.normal_key_count > 0) {
-                    for (int n = 0; n < mapping.normal_key_count; n++) {
+            if (mapping.function_key.isEmpty())
+            {
+                if (mapping.normal_key_count > 0)
+                {
+                    for (int n = 0; n < mapping.normal_key_count; n++)
+                    {
                         currentKeyboard_->press(mapping.normal_key[n]);
-                        LOG_DEBUG("Log","[Keyboard] Set Normal Key 0x%02X", mapping.normal_key[n]);
+                        LOG_DEBUG("Log", "[Keyboard] Set Normal Key 0x%02X", mapping.normal_key[n]);
                     }
                 }
-            } else {
-                if (!mapping.function_key.equals(kVoiceTriggerFunctionKey)) {
+            }
+            else
+            {
+                if (!mapping.function_key.equals(kVoiceTriggerFunctionKey))
+                {
                     currentKeyboard_->press(mapping.function_key);
-                    LOG_DEBUG("Log","[Keyboard] Set Function Key %s", mapping.function_key.c_str());
+                    LOG_DEBUG("Log", "[Keyboard] Set Function Key %s", mapping.function_key.c_str());
                 }
             }
-
         }
         temp_key_value = temp_key_value >> 1;
     }
@@ -561,30 +683,38 @@ void MainTask::handleKeyEvent(uint32_t key_value) {
     LOG_DEBUG("Log", "Key event processed successfully (key_value: 0x%08X)", key_value);
 }
 
-void MainTask::updateVoiceTriggerBitFromKeymap() {
+void MainTask::updateVoiceTriggerBitFromKeymap()
+{
     uint32_t triggerMask = 0;
-    for (int i = 0; i < PHYSICAL_KEY_NUM; ++i) {
+    for (int i = 0; i < PHYSICAL_KEY_NUM; ++i)
+    {
         KeyMapping km = configuration_.getKeyMapping(i + 1);
         String functionKey = normalizeFunctionKey(km.function_key);
-        if (!functionKey.isEmpty()) {
+        if (!functionKey.isEmpty())
+        {
             LOG_DEBUG("ASR", "Key%d function=%s", i + 1, functionKey.c_str());
         }
-        if (functionKey.equalsIgnoreCase(kVoiceTriggerFunctionKey)) {
+        if (functionKey.equalsIgnoreCase(kVoiceTriggerFunctionKey))
+        {
             triggerMask |= (1UL << i);
         }
     }
 
     voiceTriggerBit_ = triggerMask;
-    if (voiceTriggerBit_ != 0) {
+    if (voiceTriggerBit_ != 0)
+    {
         LOG_INFO("ASR", "Voice trigger source: %s (mask=0x%08X)", kVoiceTriggerFunctionKey, voiceTriggerBit_);
-    } else {
+    }
+    else
+    {
         LOG_WARNING("ASR", "No %s mapping found in first %d physical keys, ASR trigger disabled",
                     kVoiceTriggerFunctionKey,
                     PHYSICAL_KEY_NUM);
     }
 }
 
-void MainTask::applyVoiceConfig() {
+void MainTask::applyVoiceConfig()
+{
     updateVoiceTriggerBitFromKeymap();
 
     VoiceRecognizer::Config cfg;
@@ -593,21 +723,27 @@ void MainTask::applyVoiceConfig() {
     cfg.cuid = configuration_.settings_.voice_cuid;
     cfg.devPid = configuration_.settings_.voice_dev_pid;
     int cfgMs = configuration_.settings_.voice_max_record_ms;
-    if (cfgMs < 1000) cfgMs = 1000;
-    if (cfgMs > 8000) cfgMs = 8000;
+    if (cfgMs < 1000)
+        cfgMs = 1000;
+    if (cfgMs > 8000)
+        cfgMs = 8000;
     cfg.maxRecordMs = static_cast<uint32_t>(cfgMs);
     voiceRecognizer_.setConfig(cfg);
 }
 
-bool MainTask::isMusicUiActive() const {
+bool MainTask::isMusicUiActive() const
+{
     const ui_screen_tag_t tag = ui_get_active_screen_tag();
     return tag == UI_SCREEN_MUSIC || tag == UI_SCREEN_MUSIC_SECONDARY;
 }
 
-void MainTask::updateMusicUiAsrOwnership() {
+void MainTask::updateMusicUiAsrOwnership()
+{
     const bool musicUiActive = isMusicUiActive();
-    if (musicUiActive && !asrSuspendedForMusic_) {
-        if (voiceCaptureActive_ || voiceRecognizer_.isCapturing()) {
+    if (musicUiActive && !asrSuspendedForMusic_)
+    {
+        if (voiceCaptureActive_ || voiceRecognizer_.isCapturing())
+        {
             SendAsrRecordingState(false);
             voiceCaptureActive_ = false;
             voiceRecognitionBusy_ = false;
@@ -619,12 +755,15 @@ void MainTask::updateMusicUiAsrOwnership() {
         return;
     }
 
-    if (!musicUiActive && asrSuspendedForMusic_) {
+    if (!musicUiActive && asrSuspendedForMusic_)
+    {
         asrSuspendedForMusic_ = false;
         if (configuration_.settings_.voice_enable &&
             currentWorkMode_ == Configuration::WIRED_KEYBOARD_MODE &&
-            WiFi.status() == WL_CONNECTED) {
-            if (!voiceRecognizer_.resume()) {
+            WiFi.status() == WL_CONNECTED)
+        {
+            if (!voiceRecognizer_.resume())
+            {
                 LOG_WARNING("ASR", "VoiceRecognizer resume failed after leaving music UI");
             }
         }
@@ -632,13 +771,16 @@ void MainTask::updateMusicUiAsrOwnership() {
     }
 }
 
-void MainTask::reconcileVoiceRuntimeState() {
+void MainTask::reconcileVoiceRuntimeState()
+{
     const bool shouldEnableVoice = configuration_.settings_.voice_enable &&
                                    currentWorkMode_ == Configuration::WIRED_KEYBOARD_MODE &&
                                    WiFi.status() == WL_CONNECTED;
 
-    if (!shouldEnableVoice) {
-        if (voiceCaptureActive_ || voiceRecognizer_.isCapturing()) {
+    if (!shouldEnableVoice)
+    {
+        if (voiceCaptureActive_ || voiceRecognizer_.isCapturing())
+        {
             SendAsrRecordingState(false);
             voiceCaptureActive_ = false;
             voiceRecognitionBusy_ = false;
@@ -648,17 +790,22 @@ void MainTask::reconcileVoiceRuntimeState() {
         return;
     }
 
-    if (asrSuspendedForMusic_) {
+    if (asrSuspendedForMusic_)
+    {
         return;
     }
 
-    if (!voiceRecognizerStarted_) {
-        if (!voiceRecognizer_.begin()) {
+    if (!voiceRecognizerStarted_)
+    {
+        if (!voiceRecognizer_.begin())
+        {
             LOG_WARNING("ASR", "VoiceRecognizer init failed, feature disabled");
             return;
         }
         voiceRecognizerStarted_ = true;
-    } else if (!voiceRecognizer_.resume()) {
+    }
+    else if (!voiceRecognizer_.resume())
+    {
         LOG_WARNING("ASR", "VoiceRecognizer resume failed");
         return;
     }
@@ -666,31 +813,38 @@ void MainTask::reconcileVoiceRuntimeState() {
     SendHaStatusSnapshot();
 }
 
-void MainTask::startVoiceCapture() {
-    if (voiceRecognitionBusy_) {
+void MainTask::startVoiceCapture()
+{
+    if (voiceRecognitionBusy_)
+    {
         return;
     }
 
-    if (asrSuspendedForMusic_) {
+    if (asrSuspendedForMusic_)
+    {
         return;
     }
 
-    if (!configuration_.settings_.voice_enable) {
+    if (!configuration_.settings_.voice_enable)
+    {
         return;
     }
 
-    if (currentWorkMode_ != Configuration::WIRED_KEYBOARD_MODE) {
+    if (currentWorkMode_ != Configuration::WIRED_KEYBOARD_MODE)
+    {
         LOG_WARNING("ASR", "Voice typing requires wired USB mode");
         return;
     }
 
-    if (WiFi.status() != WL_CONNECTED) {
+    if (WiFi.status() != WL_CONNECTED)
+    {
         LOG_WARNING("ASR", "WiFi is not connected, skip voice recognition");
         return;
     }
 
     voiceRecognitionBusy_ = true;
-    if (!voiceRecognizer_.startCapture()) {
+    if (!voiceRecognizer_.startCapture())
+    {
         LOG_ERROR("ASR", "Voice capture start failed");
         voiceRecognitionBusy_ = false;
         return;
@@ -701,8 +855,10 @@ void MainTask::startVoiceCapture() {
     LOG_INFO("ASR", "Voice trigger pressed, start capture");
 }
 
-void MainTask::finishVoiceCapture() {
-    if (!voiceCaptureActive_) {
+void MainTask::finishVoiceCapture()
+{
+    if (!voiceCaptureActive_)
+    {
         return;
     }
 
@@ -711,19 +867,22 @@ void MainTask::finishVoiceCapture() {
 
     String recognizedText;
     bool ok = voiceRecognizer_.finishCaptureAndRecognize(recognizedText);
-    if (!ok) {
+    if (!ok)
+    {
         LOG_ERROR("ASR", "Voice recognition failed");
         voiceCaptureActive_ = false;
         voiceRecognitionBusy_ = false;
         return;
     }
 
-    if (!sendUtf8TextToCdc(recognizedText)) {
+    if (!sendUtf8TextToCdc(recognizedText))
+    {
         LOG_WARNING("ASR", "CDC output failed for text: %s", recognizedText.c_str());
     }
 
     // 保留ASCII直打能力作兜底：若上位机未连接且是ASCII文本，尝试HID输入。
-    if (!hasNonAsciiUtf8(recognizedText) && (!currentKeyboard_ || !currentKeyboard_->isConnected())) {
+    if (!hasNonAsciiUtf8(recognizedText) && (!currentKeyboard_ || !currentKeyboard_->isConnected()))
+    {
         sendAsciiTextToHost(recognizedText);
     }
 
@@ -732,16 +891,20 @@ void MainTask::finishVoiceCapture() {
     SendHaStatusSnapshot();
 }
 
-bool MainTask::sendAsciiTextToHost(const String& text) {
-    if (!currentKeyboard_ || !currentKeyboard_->isConnected()) {
+bool MainTask::sendAsciiTextToHost(const String &text)
+{
+    if (!currentKeyboard_ || !currentKeyboard_->isConnected())
+    {
         LOG_WARNING("ASR", "Keyboard is not connected");
         return false;
     }
 
     bool sentAny = false;
-    for (size_t i = 0; i < text.length(); ++i) {
+    for (size_t i = 0; i < text.length(); ++i)
+    {
         char ch = text[i];
-        if (ch < 0x20 || ch > 0x7E) {
+        if (ch < 0x20 || ch > 0x7E)
+        {
             // HID keyboard库以按键码为主，先过滤非ASCII字符避免乱码。
             continue;
         }
@@ -752,8 +915,10 @@ bool MainTask::sendAsciiTextToHost(const String& text) {
         sentAny = true;
     }
 
-    if (sentAny) {
-        if (configuration_.settings_.voice_auto_enter) {
+    if (sentAny)
+    {
+        if (configuration_.settings_.voice_auto_enter)
+        {
             currentKeyboard_->press(static_cast<uint8_t>(0xB0));
             currentKeyboard_->release(static_cast<uint8_t>(0xB0));
         }
@@ -762,8 +927,10 @@ bool MainTask::sendAsciiTextToHost(const String& text) {
     return sentAny;
 }
 
-bool MainTask::sendUtf8TextToCdc(const String& text) {
-    if (text.isEmpty()) {
+bool MainTask::sendUtf8TextToCdc(const String &text)
+{
+    if (text.isEmpty())
+    {
         return false;
     }
 
@@ -776,93 +943,112 @@ bool MainTask::sendUtf8TextToCdc(const String& text) {
     return true;
 }
 
-void MainTask::setWorkMode(Configuration::WORK_MODE mode) {
-    if (currentWorkMode_ == mode && currentKeyboard_ != nullptr) {
+void MainTask::setWorkMode(Configuration::WORK_MODE mode)
+{
+    if (currentWorkMode_ == mode && currentKeyboard_ != nullptr)
+    {
         LOG_DEBUG("Log", "Work mode unchanged: %d", mode);
         return; // 模式未改变
     }
-    
-    currentKeyboard_.reset();  // 智能指针会自动清理现有实例
+
+    currentKeyboard_.reset(); // 智能指针会自动清理现有实例
 
     currentWorkMode_ = mode;
-    
+
     // 根据模式创建对应的键盘实例
-    switch (mode) {
-        case Configuration::BLUETOOTH_KEYBOARD_MODE:
-            currentKeyboard_.reset(new BLEKeyboardImpl()); 
-            LOG_INFO("Log", "Creating BLE keyboard instance");
-            break;
-            
-        case Configuration::WIRED_KEYBOARD_MODE:
-            currentKeyboard_.reset(new USBKeyboardImpl());
-            LOG_INFO("Log", "Creating USB keyboard instance");
-            break;
-            
-        case Configuration::WIRELESS_2_4G_KEYBOARD_MODE:
-            // TODO: 实现2.4G模式
-            LOG_WARNING("Log", "2.4G mode not implemented yet");
-            break;
-            
-        default:
-            LOG_ERROR("Log", "Unknown work mode: %d", mode);
-            return;
-    }
-    
-    // 初始化键盘
-    if (currentKeyboard_ && currentKeyboard_->begin()) {
-        LOG_INFO("Log", "Keyboard initialized successfully in mode: %d", mode);
-        
-        // 更新配置
-        //configuration_.getSettings().work_mode = mode;
-    } else {
-        LOG_ERROR("Log", "Failed to initialize keyboard in mode: %d", mode);
-        currentKeyboard_.reset();  // 初始化失败时清理
+    switch (mode)
+    {
+    case Configuration::BLUETOOTH_KEYBOARD_MODE:
+        currentKeyboard_.reset(new BLEKeyboardImpl());
+        LOG_INFO("Log", "Creating BLE keyboard instance");
+        break;
+
+    case Configuration::WIRED_KEYBOARD_MODE:
+        currentKeyboard_.reset(new USBKeyboardImpl());
+        LOG_INFO("Log", "Creating USB keyboard instance");
+        break;
+
+    case Configuration::WIRELESS_2_4G_KEYBOARD_MODE:
+        // TODO: 实现2.4G模式
+        LOG_WARNING("Log", "2.4G mode not implemented yet");
+        break;
+
+    default:
+        LOG_ERROR("Log", "Unknown work mode: %d", mode);
+        return;
     }
 
-    if (configuration_.settings_.wifi_switch) {
-        if (mode == Configuration::BLUETOOTH_KEYBOARD_MODE) {
+    // 初始化键盘
+    if (currentKeyboard_ && currentKeyboard_->begin())
+    {
+        LOG_INFO("Log", "Keyboard initialized successfully in mode: %d", mode);
+
+        // 更新配置
+        // configuration_.getSettings().work_mode = mode;
+    }
+    else
+    {
+        LOG_ERROR("Log", "Failed to initialize keyboard in mode: %d", mode);
+        currentKeyboard_.reset(); // 初始化失败时清理
+    }
+
+    if (configuration_.settings_.wifi_switch)
+    {
+        if (mode == Configuration::BLUETOOTH_KEYBOARD_MODE)
+        {
             stopWiFiReconnect();
-        } else {
+        }
+        else
+        {
             scheduleWiFiConnectAttempt(true);
         }
     }
 }
 
-MainTask::MainTask(const uint8_t task_core, Configuration& configuration)
-: Task("MainTask", 12288, 1, task_core), 
-  configuration_(configuration),
-  message_queue_(nullptr),
-  currentWorkMode_(Configuration::NONE_MODE)  {
+MainTask::MainTask(const uint8_t task_core, Configuration &configuration)
+    : Task("MainTask", 12288, 1, task_core),
+      configuration_(configuration),
+      message_queue_(nullptr),
+      currentWorkMode_(Configuration::NONE_MODE)
+{
     g_main_task = this;
 }
 
-MainTask::~MainTask() {
-    if (g_main_task == this) {
+MainTask::~MainTask()
+{
+    if (g_main_task == this)
+    {
         g_main_task = nullptr;
     }
 }
 
-void MainTask::setBoost5VEnabled(bool enabled) {
-    if (!boost5VPinInitialized_) {
+void MainTask::setBoost5VEnabled(bool enabled)
+{
+    if (!boost5VPinInitialized_)
+    {
         pinMode(kBoost5VEnablePin, OUTPUT);
         boost5VPinInitialized_ = true;
     }
 
     digitalWrite(kBoost5VEnablePin, enabled ? HIGH : LOW);
-    if (boost5VEnabled_ != enabled) {
+    if (boost5VEnabled_ != enabled)
+    {
         boost5VEnabled_ = enabled;
         LOG_INFO("Power", "GPIO%d 3.3V->5V enable %s", kBoost5VEnablePin, enabled ? "ON" : "OFF");
     }
 }
 
-void MainTask::applyPowerMode(Configuration::POWER_MODE mode) {
+void MainTask::applyPowerMode(Configuration::POWER_MODE mode)
+{
     const bool enableBoost5V = (mode == Configuration::NORMAL_POWER_MODE);
     setBoost5VEnabled(enableBoost5V);
 }
 
-void MainTask::SendMusicPlayerUpdate(bool force) {
+void MainTask::SendMusicPlayerUpdate(bool force)
+{
     const uint32_t nowMs = millis();
-    if (!force && (nowMs - lastMusicUiUpdateMs_ < 500)) {
+    if (!force && (nowMs - lastMusicUiUpdateMs_ < 500))
+    {
         return;
     }
     lastMusicUiUpdateMs_ = nowMs;
@@ -871,31 +1057,38 @@ void MainTask::SendMusicPlayerUpdate(bool force) {
     msg.type = uint8_t(MainCommand::MUSIC_PLAYER_UPDATE);
     msg.music_player = musicPlayerState_;
 
-    if (message_queue_ != nullptr) {
-        if (xQueueSend(message_queue_, &msg, 0) != pdPASS) {
+    if (message_queue_ != nullptr)
+    {
+        if (xQueueSend(message_queue_, &msg, 0) != pdPASS)
+        {
             LOG_WARNING("Display", "Drop MUSIC_PLAYER_UPDATE: display queue full");
         }
     }
 }
 
-void MainTask::updateLocalMusicProgress(uint32_t nowMs) {
-    if (!musicPlayerState_.connected) {
+void MainTask::updateLocalMusicProgress(uint32_t nowMs)
+{
+    if (!musicPlayerState_.connected)
+    {
         lastMusicProgressTickMs_ = 0;
         return;
     }
 
-    if (!musicPlayerState_.is_playing || musicPlayerState_.is_paused || musicPlayerState_.total_seconds == 0) {
+    if (!musicPlayerState_.is_playing || musicPlayerState_.is_paused || musicPlayerState_.total_seconds == 0)
+    {
         lastMusicProgressTickMs_ = nowMs;
         return;
     }
 
-    if (lastMusicProgressTickMs_ == 0) {
+    if (lastMusicProgressTickMs_ == 0)
+    {
         lastMusicProgressTickMs_ = nowMs;
         return;
     }
 
     const uint32_t elapsedMs = nowMs - lastMusicProgressTickMs_;
-    if (elapsedMs < 1000) {
+    if (elapsedMs < 1000)
+    {
         return;
     }
 
@@ -905,13 +1098,16 @@ void MainTask::updateLocalMusicProgress(uint32_t nowMs) {
     musicPlayerState_.current_seconds = static_cast<uint16_t>(nextSeconds);
     lastMusicProgressTickMs_ += advancedSeconds * 1000;
 
-    if (musicPlayerState_.current_seconds >= musicPlayerState_.total_seconds) {
+    if (musicPlayerState_.current_seconds >= musicPlayerState_.total_seconds)
+    {
         lastMusicProgressTickMs_ = nowMs;
     }
 }
 
-void MainTask::SendMusicControlCommand(const char* action) {
-    if (!action || action[0] == '\0') {
+void MainTask::SendMusicControlCommand(const char *action)
+{
+    if (!action || action[0] == '\0')
+    {
         return;
     }
 
@@ -921,84 +1117,101 @@ void MainTask::SendMusicControlCommand(const char* action) {
     protocol_.sendCustomCommand(CMD_MUSIC_CONTROL, 0, controlDoc.as<JsonObject>());
 }
 
-String MainTask::formatKeyMappingDisplay(const KeyMapping& mapping, uint8_t physicalKey) const {
+String MainTask::formatKeyMappingDisplay(const KeyMapping &mapping, uint8_t physicalKey) const
+{
     String display = String("K") + String(physicalKey);
 
-    if (!mapping.function_key.isEmpty()) {
+    if (!mapping.function_key.isEmpty())
+    {
         return display + ":" + simplifyDisplayToken(mapping.function_key);
     }
 
     String combo;
-    for (uint8_t i = 0; i < mapping.macros_key_count; ++i) {
-        if (!combo.isEmpty()) {
+    for (uint8_t i = 0; i < mapping.macros_key_count; ++i)
+    {
+        if (!combo.isEmpty())
+        {
             combo += "+";
         }
         combo += simplifyDisplayToken(lookupKeyNameByCode(mapping.macros_key[i]));
     }
-    for (uint8_t i = 0; i < mapping.normal_key_count; ++i) {
-        if (!combo.isEmpty()) {
+    for (uint8_t i = 0; i < mapping.normal_key_count; ++i)
+    {
+        if (!combo.isEmpty())
+        {
             combo += "+";
         }
         combo += simplifyDisplayToken(lookupKeyNameByCode(mapping.normal_key[i]));
     }
 
-    if (combo.isEmpty()) {
+    if (combo.isEmpty())
+    {
         combo = "--";
     }
 
     return display + ":" + combo;
 }
 
-void MainTask::SendKeyMappedProfileUi() {
+void MainTask::SendKeyMappedProfileUi()
+{
     DisplayMessage msg{};
     const uint8_t activeProfile = configuration_.settings_.active_keymap_profile;
     msg.type = uint8_t(MainCommand::KEYMAP_PROFILE_UPDATE);
     msg.active_profile = activeProfile;
     strncpy(msg.profile_name,
-        Configuration::getProfileDisplayName(activeProfile),
+            Configuration::getProfileDisplayName(activeProfile),
             sizeof(msg.profile_name) - 1);
     strncpy(msg.profile_icon,
-        kProfileIcons[5],
+            kProfileIcons[5],
             sizeof(msg.profile_icon) - 1);
 
-    if (profileIconExists(activeProfile)) {
+    if (profileIconExists(activeProfile))
+    {
         strncpy(msg.profile_icon,
-            kProfileIcons[activeProfile % CONFIG_PROFILE_COUNT],
+                kProfileIcons[activeProfile % CONFIG_PROFILE_COUNT],
                 sizeof(msg.profile_icon) - 1);
         const String spiffsPath = Configuration::getProfileIconPath(activeProfile);
         const String lvglPath = String("S:") + spiffsPath;
         File iconFile = SPIFFS.open(spiffsPath, FILE_READ);
-        if (iconFile) {
+        if (iconFile)
+        {
             LOG_INFO("KeymapUI", "profile=%u icon file ready path=%s size=%u",
                      (unsigned)(activeProfile + 1),
                      spiffsPath.c_str(),
                      (unsigned)iconFile.size());
             iconFile.close();
-        } else {
+        }
+        else
+        {
             LOG_WARNING("KeymapUI", "profile=%u icon file missing path=%s",
                         (unsigned)(activeProfile + 1),
                         spiffsPath.c_str());
         }
         copyUtf8Truncated(msg.profile_icon_path,
-                  sizeof(msg.profile_icon_path),
-                  lvglPath);
-    } else {
+                          sizeof(msg.profile_icon_path),
+                          lvglPath);
+    }
+    else
+    {
         LOG_INFO("KeymapUI", "profile=%u using fallback symbol %s",
                  (unsigned)(activeProfile + 1),
                  msg.profile_icon);
     }
 
-    for (uint8_t i = 0; i < 16; ++i) {
+    for (uint8_t i = 0; i < 16; ++i)
+    {
         const String label = formatKeyMappingDisplay(configuration_.key_mappings_[i], i + 1);
         strncpy(msg.keymap_labels[i], label.c_str(), sizeof(msg.keymap_labels[i]) - 1);
     }
 
-    if (message_queue_ != nullptr) {
+    if (message_queue_ != nullptr)
+    {
         xQueueSend(message_queue_, &msg, portMAX_DELAY);
     }
 }
 
-void MainTask::sendCurrentProfileState(int seq) {
+void MainTask::sendCurrentProfileState(int seq)
+{
     DynamicJsonDocument profileDoc(512);
     JsonObject profileState = profileDoc.to<JsonObject>();
     const uint8_t activeProfile = configuration_.settings_.active_keymap_profile;
@@ -1009,23 +1222,27 @@ void MainTask::sendCurrentProfileState(int seq) {
     state["profile_number"] = activeProfile + 1;
     state["profile_name"] = Configuration::getProfileDisplayName(activeProfile);
     state["has_custom_icon"] = hasCustomIcon;
-    if (hasCustomIcon) {
+    if (hasCustomIcon)
+    {
         state["icon_path"] = Configuration::getProfileIconPath(activeProfile);
     }
 
     protocol_.sendCustomCommand(CMD_PROFILE_STATE, seq, profileState);
 }
 
-void MainTask::sendCurrentKeymapSnapshot(int seq) {
+void MainTask::sendCurrentKeymapSnapshot(int seq)
+{
     constexpr size_t kKeymapDocCapacity = 12288;
     DynamicJsonDocument keymapDoc(kKeymapDocCapacity);
     JsonArray keymapArray = keymapDoc.to<JsonArray>();
 
-    for (int i = 0; i < CONFIG_ALL_KEY_NUM; i++) {
+    for (int i = 0; i < CONFIG_ALL_KEY_NUM; i++)
+    {
         auto function_key_str = configuration_.key_mappings_[i].function_key;
         String normal_key_str;
         String macro_str;
-        if (function_key_str.isEmpty()) {
+        if (function_key_str.isEmpty())
+        {
             normal_key_str = buildKeySequenceString(configuration_.key_mappings_[i].normal_key,
                                                     configuration_.key_mappings_[i].normal_key_count);
             macro_str = buildKeySequenceString(configuration_.key_mappings_[i].macros_key,
@@ -1039,17 +1256,20 @@ void MainTask::sendCurrentKeymapSnapshot(int seq) {
         key["function"] = function_key_str;
     }
 
-    for (int i = 0; i < CONFIG_SPECIAL_INPUT_NUM; ++i) {
-        const char* inputId = Configuration::getSpecialInputId(i);
-        if (!inputId) {
+    for (int i = 0; i < CONFIG_SPECIAL_INPUT_NUM; ++i)
+    {
+        const char *inputId = Configuration::getSpecialInputId(i);
+        if (!inputId)
+        {
             continue;
         }
 
-        const KeyMapping& mapping = configuration_.special_key_mappings_[i];
+        const KeyMapping &mapping = configuration_.special_key_mappings_[i];
         String normal_key_str;
         String macro_str;
         String function_key_str = mapping.function_key;
-        if (function_key_str.isEmpty()) {
+        if (function_key_str.isEmpty())
+        {
             normal_key_str = buildKeySequenceString(mapping.normal_key, mapping.normal_key_count);
             macro_str = buildKeySequenceString(mapping.macros_key, mapping.macros_key_count);
         }
@@ -1065,7 +1285,8 @@ void MainTask::sendCurrentKeymapSnapshot(int seq) {
     protocol_.sendKeymap(keymapArray, seq);
 }
 
-void MainTask::sendCurrentConfigSnapshot(int seq) {
+void MainTask::sendCurrentConfigSnapshot(int seq)
+{
     DynamicJsonDocument configDoc(4096);
     JsonObject config = configDoc.to<JsonObject>();
     const uint8_t activeProfile = configuration_.settings_.active_keymap_profile;
@@ -1097,64 +1318,76 @@ void MainTask::sendCurrentConfigSnapshot(int seq) {
     protocol_.sendConfig(config, seq);
 }
 
-bool MainTask::profileIconExists(uint8_t profileIndex) const {
+bool MainTask::profileIconExists(uint8_t profileIndex) const
+{
     return SPIFFS.exists(Configuration::getProfileIconPath(profileIndex));
 }
 
-bool MainTask::removeProfileIcon(uint8_t profileIndex) {
+bool MainTask::removeProfileIcon(uint8_t profileIndex)
+{
     const String path = Configuration::getProfileIconPath(profileIndex);
-    if (!SPIFFS.exists(path)) {
+    if (!SPIFFS.exists(path))
+    {
         return true;
     }
     return SPIFFS.remove(path);
 }
 
-bool MainTask::saveProfileIconFromBase64(uint8_t profileIndex, const String& pngBase64, String& errorMessage) {
-    if (pngBase64.isEmpty()) {
+bool MainTask::saveProfileIconFromBase64(uint8_t profileIndex, const String &pngBase64, String &errorMessage)
+{
+    if (pngBase64.isEmpty())
+    {
         errorMessage = "png_base64 is empty";
         return false;
     }
 
-    if (pngBase64.length() > 14336) {
+    if (pngBase64.length() > 14336)
+    {
         errorMessage = "png_base64 too large";
         return false;
     }
 
     size_t decodedLength = 0;
-    const unsigned char* encoded = reinterpret_cast<const unsigned char*>(pngBase64.c_str());
+    const unsigned char *encoded = reinterpret_cast<const unsigned char *>(pngBase64.c_str());
     const size_t encodedLength = pngBase64.length();
     int ret = mbedtls_base64_decode(nullptr, 0, &decodedLength, encoded, encodedLength);
-    if (ret != MBEDTLS_ERR_BASE64_BUFFER_TOO_SMALL || decodedLength == 0) {
+    if (ret != MBEDTLS_ERR_BASE64_BUFFER_TOO_SMALL || decodedLength == 0)
+    {
         errorMessage = "base64 length invalid";
         return false;
     }
 
     std::unique_ptr<uint8_t[]> decoded(new uint8_t[decodedLength]);
-    if (!decoded) {
+    if (!decoded)
+    {
         errorMessage = "icon buffer alloc failed";
         return false;
     }
 
     ret = mbedtls_base64_decode(decoded.get(), decodedLength, &decodedLength, encoded, encodedLength);
-    if (ret != 0) {
+    if (ret != 0)
+    {
         errorMessage = "base64 decode failed";
         return false;
     }
-    if (!isPng48x48(decoded.get(), decodedLength)) {
+    if (!isPng48x48(decoded.get(), decodedLength))
+    {
         errorMessage = "only 48x48 PNG is supported";
         return false;
     }
 
     const String path = Configuration::getProfileIconPath(profileIndex);
     File file = SPIFFS.open(path, FILE_WRITE);
-    if (!file) {
+    if (!file)
+    {
         errorMessage = "open icon file failed";
         return false;
     }
 
     const size_t written = file.write(decoded.get(), decodedLength);
     file.close();
-    if (written != decodedLength) {
+    if (written != decodedLength)
+    {
         SPIFFS.remove(path);
         errorMessage = "write icon file failed";
         return false;
@@ -1163,15 +1396,20 @@ bool MainTask::saveProfileIconFromBase64(uint8_t profileIndex, const String& png
     return true;
 }
 
-bool MainTask::switchKeymapProfile(int delta) {
+bool MainTask::switchKeymapProfile(int delta)
+{
     int profile = static_cast<int>(configuration_.settings_.active_keymap_profile) + delta;
-    if (profile < 0) {
+    if (profile < 0)
+    {
         profile = CONFIG_PROFILE_COUNT - 1;
-    } else if (profile >= CONFIG_PROFILE_COUNT) {
+    }
+    else if (profile >= CONFIG_PROFILE_COUNT)
+    {
         profile = 0;
     }
 
-    if (!configuration_.switchActiveProfile(static_cast<uint8_t>(profile))) {
+    if (!configuration_.switchActiveProfile(static_cast<uint8_t>(profile)))
+    {
         return false;
     }
 
@@ -1184,39 +1422,44 @@ bool MainTask::switchKeymapProfile(int delta) {
 }
 
 // 从 NTP 同步时间到系统时钟
-bool MainTask::SyncTimeFromNTP() {
-  LOG_DEBUG("Log", "正在从 NTP 同步时间...");
-  timeClient.begin();
-  if (timeClient.forceUpdate()) {
-    // 获取 NTP 时间（UTC 时间戳）
-    unsigned long epochTime = timeClient.getEpochTime();
-    
-    // 设置系统时钟
-    struct timeval tv;
-    tv.tv_sec = epochTime;
-    tv.tv_usec = 0;
-    settimeofday(&tv, NULL);
-    LOG_DEBUG("Log","系统时钟已设置为: ");
-    return true;
-  }
-  
-  LOG_DEBUG("Log", "NTP 时间同步失败");
-  return false;
+bool MainTask::SyncTimeFromNTP()
+{
+    LOG_DEBUG("Log", "正在从 NTP 同步时间...");
+    timeClient.begin();
+    if (timeClient.forceUpdate())
+    {
+        // 获取 NTP 时间（UTC 时间戳）
+        unsigned long epochTime = timeClient.getEpochTime();
+
+        // 设置系统时钟
+        struct timeval tv;
+        tv.tv_sec = epochTime;
+        tv.tv_usec = 0;
+        settimeofday(&tv, NULL);
+        LOG_DEBUG("Log", "系统时钟已设置为: ");
+        return true;
+    }
+
+    LOG_DEBUG("Log", "NTP 时间同步失败");
+    return false;
 }
 
-int MainTask::parseKeymapSetCommand(int seq, JsonObject data) {
-    LOG_DEBUG("Log","Parsing keymap set command");
-    
-    if (!data.containsKey("keymap") || !data["keymap"].is<JsonArray>()) {
-        LOG_ERROR("Log","Invalid keymap data format");
+int MainTask::parseKeymapSetCommand(int seq, JsonObject data)
+{
+    LOG_DEBUG("Log", "Parsing keymap set command");
+
+    if (!data.containsKey("keymap") || !data["keymap"].is<JsonArray>())
+    {
+        LOG_ERROR("Log", "Invalid keymap data format");
         return -1;
     }
-    
+
     JsonArray keymaps = data["keymap"].as<JsonArray>();
     int count = 0;
-    
+
     // 获取互斥锁以确保线程安全
-    if (xSemaphoreTake(configuration_.mutex_, portMAX_DELAY) == pdTRUE) {
+    if (xSemaphoreTake(configuration_.mutex_, portMAX_DELAY) == pdTRUE)
+    {
         // // 遍历所有键位映射并重置
         // for (int i = 0; i < CONFIG_ALL_KEY_NUM; i++) {
         //     configuration_.key_mappings_[i].normal_key_count = 0;
@@ -1225,97 +1468,122 @@ int MainTask::parseKeymapSetCommand(int seq, JsonObject data) {
         //     memset(configuration_.key_mappings_[i].normal_key, 0, sizeof(configuration_.key_mappings_[i].normal_key));
         //     memset(configuration_.key_mappings_[i].macros_key, 0, sizeof(configuration_.key_mappings_[i].macros_key));
         // }
-        
-        for (JsonObject keymap : keymaps) {
-            if (parseSingleKeyMapping(keymap) == 0) {
+
+        for (JsonObject keymap : keymaps)
+        {
+            if (parseSingleKeyMapping(keymap) == 0)
+            {
                 count++;
             }
         }
-        
+
         xSemaphoreGive(configuration_.mutex_);
     }
-    
-    LOG_DEBUG("Log","Successfully parsed " + String(count) + " key mappings");
-    
+
+    LOG_DEBUG("Log", "Successfully parsed " + String(count) + " key mappings");
+
     // 保存配置到持久化存储
-    if (count > 0) {
-        if (configuration_.SaveKeyMapping()) {
-            LOG_DEBUG("Log","Key mappings saved to persistent storage");
-        } else {
-            LOG_ERROR("Log","Failed to save key mappings to persistent storage");
+    if (count > 0)
+    {
+        if (configuration_.SaveKeyMapping())
+        {
+            LOG_DEBUG("Log", "Key mappings saved to persistent storage");
+        }
+        else
+        {
+            LOG_ERROR("Log", "Failed to save key mappings to persistent storage");
         }
     }
-    
+
     applyVoiceConfig();
     return count;
 }
 
-bool MainTask::parseKeymapSetValue(Configuration::KEY_TYPE key_type, const String& value, KeyMapping& mapping) {
-    if (key_type == Configuration::FUNCTION_KEY) {
+bool MainTask::parseKeymapSetValue(Configuration::KEY_TYPE key_type, const String &value, KeyMapping &mapping)
+{
+    if (key_type == Configuration::FUNCTION_KEY)
+    {
         mapping.function_key = normalizeFunctionKey(value);
         LOG_INFO("ASR", "Set function key mapping=%s", mapping.function_key.c_str());
-    } else {
+    }
+    else
+    {
         int pos = 0;
-        while (pos < value.length()) {
+        while (pos < value.length())
+        {
             int end_pos = value.indexOf('+', pos);
-            if (end_pos == -1) end_pos = value.length();
+            if (end_pos == -1)
+                end_pos = value.length();
 
             String code_str = value.substring(pos, end_pos);
             uint8_t keycode = stringToKeycode(code_str.c_str());
-            
-            if (key_type == Configuration::NORMAL_KEY) {
-                if (mapping.normal_key_count >= 6) {
+
+            if (key_type == Configuration::NORMAL_KEY)
+            {
+                if (mapping.normal_key_count >= 6)
+                {
                     LOG_ERROR("Log", "Normal key array overflow! Max 6 keys allowed.");
                     break;
                 }
                 mapping.normal_key[mapping.normal_key_count] = keycode;
                 mapping.normal_key_count++;
-                mapping.function_key = "";//定义了普通键则，清除对应function_key
-            } else if (key_type == Configuration::MACROS_KEY) {
-                if (mapping.macros_key_count >= 5) {
+                mapping.function_key = ""; // 定义了普通键则，清除对应function_key
+            }
+            else if (key_type == Configuration::MACROS_KEY)
+            {
+                if (mapping.macros_key_count >= 5)
+                {
                     LOG_ERROR("Log", "Macros key array overflow! Max 5 keys allowed.");
                     break;
                 }
                 mapping.macros_key[mapping.macros_key_count] = keycode;
                 mapping.macros_key_count++;
-            } 
+            }
             pos = end_pos + 1;
         }
     }
-    
+
     return true;
 }
 
-int MainTask::parseSingleKeyMapping(JsonObject keyObj) {
-    // if (!keyObj.containsKey("physical_key") || !keyObj.containsKey("normal") 
+int MainTask::parseSingleKeyMapping(JsonObject keyObj)
+{
+    // if (!keyObj.containsKey("physical_key") || !keyObj.containsKey("normal")
     //     || !keyObj.containsKey("macro") || !keyObj.containsKey("function")) {
     //     LOG_ERROR("Log","Invalid key mapping object");
     //     return -1;
     // }
-    
-    String inputId;
-    KeyMapping* targetMapping = nullptr;
 
-    if (keyObj.containsKey("input_id") && keyObj["input_id"].is<const char*>()) {
+    String inputId;
+    KeyMapping *targetMapping = nullptr;
+
+    if (keyObj.containsKey("input_id") && keyObj["input_id"].is<const char *>())
+    {
         inputId = keyObj["input_id"].as<String>();
         targetMapping = configuration_.getMutableSpecialInputMapping(inputId);
-        if (!targetMapping) {
+        if (!targetMapping)
+        {
             LOG_ERROR("Log", "Unknown input_id: %s", inputId.c_str());
             return -1;
         }
-    } else if (keyObj["physical"].is<int>()) {
+    }
+    else if (keyObj["physical"].is<int>())
+    {
         int physicalKey_index = keyObj["physical"].as<int>() - 1;
-        if (physicalKey_index < 0 || physicalKey_index >= CONFIG_ALL_KEY_NUM) {
-            LOG_ERROR("Log","Physical key out of range:%d ", physicalKey_index);
+        if (physicalKey_index < 0 || physicalKey_index >= CONFIG_ALL_KEY_NUM)
+        {
+            LOG_ERROR("Log", "Physical key out of range:%d ", physicalKey_index);
             return -1;
         }
         targetMapping = &configuration_.key_mappings_[physicalKey_index];
-    } else {
+    }
+    else
+    {
         LOG_ERROR("Log", "Invalid key mapping target");
         return -1;
     }
-    
-    KeyMapping& keymapping = *targetMapping;
+
+    KeyMapping &keymapping = *targetMapping;
 
     // 清空数组
     keymapping.normal_key_count = 0;
@@ -1325,35 +1593,40 @@ int MainTask::parseSingleKeyMapping(JsonObject keyObj) {
 
     // 解析普通键 (normal)
     String normalStr = keyObj["normal"];
-    LOG_ERROR("Log","parseSingleKeyMapping normalStr:%s ", normalStr.c_str());
+    LOG_ERROR("Log", "parseSingleKeyMapping normalStr:%s ", normalStr.c_str());
 
-    if (normalStr && strlen(normalStr.c_str()) > 0) {
+    if (normalStr && strlen(normalStr.c_str()) > 0)
+    {
         parseKeymapSetValue(Configuration::NORMAL_KEY, normalStr, keymapping);
     }
-    
+
     // 解析宏键 (macro)
     String macroStr = keyObj["macro"];
-    if (macroStr && strlen(macroStr.c_str()) > 0) {
+    if (macroStr && strlen(macroStr.c_str()) > 0)
+    {
         parseKeymapSetValue(Configuration::MACROS_KEY, macroStr, keymapping);
     }
-    
+
     // 解析功能键 (function)
     String functionStr = keyObj["function"];
-    if (functionStr && (strlen(functionStr.c_str()) > 0) && (!functionStr.equals("0"))) {
+    if (functionStr && (strlen(functionStr.c_str()) > 0) && (!functionStr.equals("0")))
+    {
         parseKeymapSetValue(Configuration::FUNCTION_KEY, functionStr, keymapping);
     }
 
     // LOG_WARNING("Log","physicalKey_index=%d,normal_key_count=%d,macros_key_count=%d",
     //     physicalKey_index ,keymapping.normal_key_count,keymapping.macros_key_count);
-    
+
     return 0;
 }
 
-int MainTask:: parseConfigSetCommand(int seq, JsonObject data) {
+int MainTask::parseConfigSetCommand(int seq, JsonObject data)
+{
     LV_UNUSED(seq);
-    
-    if (!data.containsKey("config") || !data["config"].is<JsonObject>()) {
-        LOG_ERROR("Log","Invalid config data format");
+
+    if (!data.containsKey("config") || !data["config"].is<JsonObject>())
+    {
+        LOG_ERROR("Log", "Invalid config data format");
         return -1;
     }
 
@@ -1361,176 +1634,214 @@ int MainTask:: parseConfigSetCommand(int seq, JsonObject data) {
     int pendingProfile = -1;
     bool powerModeChanged = false;
 
-    if (xSemaphoreTake(configuration_.mutex_, portMAX_DELAY) == pdTRUE) {
+    if (xSemaphoreTake(configuration_.mutex_, portMAX_DELAY) == pdTRUE)
+    {
         JsonObject config = data["config"];
         bool settingChanged = false;
         bool voiceConfigChanged = false;
 
-        if (config.containsKey("wifi_switch")) {
+        if (config.containsKey("wifi_switch"))
+        {
             configuration_.settings_.wifi_switch = config["wifi_switch"];
             settingChanged = true;
 
-            if (configuration_.settings_.wifi_switch == true) {
-                if (config.containsKey("wifi_ssid") && config.containsKey("wifi_password")) {
+            if (configuration_.settings_.wifi_switch == true)
+            {
+                if (config.containsKey("wifi_ssid") && config.containsKey("wifi_password"))
+                {
                     configuration_.settings_.wifi_ssid = config["wifi_ssid"].as<String>();
                     configuration_.settings_.wifi_password = config["wifi_password"].as<String>();
                     settingChanged = true;
                     scheduleWiFiConnectAttempt(true);
                 }
 
-                if (WiFi.status() == WL_CONNECTED) {
+                if (WiFi.status() == WL_CONNECTED)
+                {
                     updateProtocolTcpEndpoint();
-                } else {
+                }
+                else
+                {
                     scheduleWiFiConnectAttempt(true);
                 }
-            } else {
+            }
+            else
+            {
                 stopWiFiReconnect();
                 reconcileVoiceRuntimeState();
                 LOG_DEBUG("Log", "[parseConfigSetCommand] WiFi disconnect!");
             }
         }
 
-        if (config.containsKey("connect_host")) {
+        if (config.containsKey("connect_host"))
+        {
             configuration_.settings_.connect_host = config["connect_host"].as<int>() != 0;
             settingChanged = true;
 
-            if (!configuration_.settings_.connect_host) {
+            if (!configuration_.settings_.connect_host)
+            {
                 protocol_.disableTcpClient();
-            } else if (WiFi.status() == WL_CONNECTED) {
+            }
+            else if (WiFi.status() == WL_CONNECTED)
+            {
                 updateProtocolTcpEndpoint();
             }
         }
-        
-        if (config.containsKey("work_mode")) {
+
+        if (config.containsKey("work_mode"))
+        {
             int new_work_mode = config["work_mode"];
-            if (new_work_mode >= Configuration::WIRED_KEYBOARD_MODE && 
-                new_work_mode <= Configuration::WIRELESS_2_4G_KEYBOARD_MODE) {
+            if (new_work_mode >= Configuration::WIRED_KEYBOARD_MODE &&
+                new_work_mode <= Configuration::WIRELESS_2_4G_KEYBOARD_MODE)
+            {
                 setWorkMode(static_cast<Configuration::WORK_MODE>(new_work_mode));
                 configuration_.settings_.work_mode = new_work_mode;
                 settingChanged = true;
             }
         }
 
-        if (config.containsKey("rgb_single_colar")) {
+        if (config.containsKey("rgb_single_colar"))
+        {
             configuration_.settings_.rgb_single_colar = config["rgb_single_colar"].as<String>();
             settingChanged = true;
         }
 
-        if (config.containsKey("rgb_mode")) {
+        if (config.containsKey("rgb_mode"))
+        {
             int new_rgb_mode = config["rgb_mode"];
-            //if (newMode >= Configuration::RGB_CLICK_MODE && 
-            //    newMode <= Configuration::RGB_PULSE_MODE) {
-                //setWorkMode(static_cast<Configuration::WORK_MODE>(newMode));
-                configuration_.settings_.rgb_mode = new_rgb_mode;
-                settingChanged = true;
-           // }
+            // if (newMode >= Configuration::RGB_CLICK_MODE &&
+            //     newMode <= Configuration::RGB_PULSE_MODE) {
+            // setWorkMode(static_cast<Configuration::WORK_MODE>(newMode));
+            configuration_.settings_.rgb_mode = new_rgb_mode;
+            settingChanged = true;
+            // }
         }
 
-        if (config.containsKey("rgb_click_mode")) {
+        if (config.containsKey("rgb_click_mode"))
+        {
             int new_rgb_click_mode = config["rgb_click_mode"];
-            //if (newMode >= Configuration::RGB_CLICK_MODE && 
-            //    newMode <= Configuration::RGB_PULSE_MODE) {
-                //setWorkMode(static_cast<Configuration::WORK_MODE>(newMode));
-                configuration_.settings_.rgb_click_mode = new_rgb_click_mode;
-                settingChanged = true;
-           // }
+            // if (newMode >= Configuration::RGB_CLICK_MODE &&
+            //     newMode <= Configuration::RGB_PULSE_MODE) {
+            // setWorkMode(static_cast<Configuration::WORK_MODE>(newMode));
+            configuration_.settings_.rgb_click_mode = new_rgb_click_mode;
+            settingChanged = true;
+            // }
         }
 
-        if (config.containsKey("rgb_brightness")) {
+        if (config.containsKey("rgb_brightness"))
+        {
             configuration_.settings_.rgb_brightness = config["rgb_brightness"];
             settingChanged = true;
         }
 
-        if (config.containsKey("tft_theme")) {
+        if (config.containsKey("tft_theme"))
+        {
             configuration_.settings_.tft_theme = config["tft_theme"];
             settingChanged = true;
         }
 
-        if (config.containsKey("tft_brightness")) {
+        if (config.containsKey("tft_brightness"))
+        {
             configuration_.settings_.tft_brightness = constrain(static_cast<int>(config["tft_brightness"]), 5, 100);
             settingChanged = true;
-        }        
+        }
 
-        if (config.containsKey("device_volume")) {
+        if (config.containsKey("device_volume"))
+        {
             configuration_.settings_.device_volume = config["device_volume"];
             settingChanged = true;
-            //设置喇叭音量
-            speaker_.SetVolume(configuration_.settings_.device_volume / 5); //0~21
-        }           
+            // 设置喇叭音量
+            speaker_.SetVolume(configuration_.settings_.device_volume / 5); // 0~21
+        }
 
-        if (config.containsKey("power_mode")) {
+        if (config.containsKey("power_mode"))
+        {
             int new_power_mode = constrain(static_cast<int>(config["power_mode"]),
                                            static_cast<int>(Configuration::NORMAL_POWER_MODE),
                                            static_cast<int>(Configuration::DEEPSLEEP_POWER_MODE));
-            if (configuration_.settings_.power_mode != new_power_mode) {
+            if (configuration_.settings_.power_mode != new_power_mode)
+            {
                 configuration_.settings_.power_mode = new_power_mode;
                 settingChanged = true;
                 powerModeChanged = true;
             }
-        }        
+        }
 
-        if (config.containsKey("voice_enable")) {
+        if (config.containsKey("voice_enable"))
+        {
             configuration_.settings_.voice_enable = config["voice_enable"];
             settingChanged = true;
             voiceConfigChanged = true;
         }
-        if (config.containsKey("voice_trigger_key")) {
+        if (config.containsKey("voice_trigger_key"))
+        {
             configuration_.settings_.voice_trigger_key = config["voice_trigger_key"];
             settingChanged = true;
             voiceConfigChanged = true;
         }
-        if (config.containsKey("voice_max_record_ms")) {
+        if (config.containsKey("voice_max_record_ms"))
+        {
             configuration_.settings_.voice_max_record_ms = config["voice_max_record_ms"];
             settingChanged = true;
             voiceConfigChanged = true;
         }
-        if (config.containsKey("voice_auto_enter")) {
+        if (config.containsKey("voice_auto_enter"))
+        {
             configuration_.settings_.voice_auto_enter = config["voice_auto_enter"];
             settingChanged = true;
             voiceConfigChanged = true;
         }
-        if (config.containsKey("voice_dev_pid")) {
+        if (config.containsKey("voice_dev_pid"))
+        {
             configuration_.settings_.voice_dev_pid = config["voice_dev_pid"];
             settingChanged = true;
             voiceConfigChanged = true;
         }
-        if (config.containsKey("voice_cuid")) {
+        if (config.containsKey("voice_cuid"))
+        {
             configuration_.settings_.voice_cuid = config["voice_cuid"].as<String>();
             settingChanged = true;
             voiceConfigChanged = true;
         }
-        if (config.containsKey("voice_baidu_api_key")) {
+        if (config.containsKey("voice_baidu_api_key"))
+        {
             configuration_.settings_.voice_baidu_api_key = config["voice_baidu_api_key"].as<String>();
             settingChanged = true;
             voiceConfigChanged = true;
         }
-        if (config.containsKey("voice_baidu_secret_key")) {
+        if (config.containsKey("voice_baidu_secret_key"))
+        {
             configuration_.settings_.voice_baidu_secret_key = config["voice_baidu_secret_key"].as<String>();
             settingChanged = true;
             voiceConfigChanged = true;
         }
-        if (config.containsKey("pc_status_mask")) {
+        if (config.containsKey("pc_status_mask"))
+        {
             configuration_.settings_.pc_status_mask = config["pc_status_mask"].as<int>();
             settingChanged = true;
         }
 
-        if (config.containsKey("active_keymap_profile")) {
+        if (config.containsKey("active_keymap_profile"))
+        {
             const uint8_t newProfile = config["active_keymap_profile"].as<uint8_t>();
-            if (newProfile < CONFIG_PROFILE_COUNT && newProfile != configuration_.settings_.active_keymap_profile) {
+            if (newProfile < CONFIG_PROFILE_COUNT && newProfile != configuration_.settings_.active_keymap_profile)
+            {
                 settingChanged = true;
                 voiceConfigChanged = true;
                 pendingProfile = static_cast<int>(newProfile);
             }
         }
 
-        if (voiceConfigChanged) {
+        if (voiceConfigChanged)
+        {
             applyVoiceConfig();
         }
-        if (settingChanged || voiceConfigChanged) {
+        if (settingChanged || voiceConfigChanged)
+        {
             reconcileVoiceRuntimeState();
         }
 
-        if (settingChanged) {
+        if (settingChanged)
+        {
             SendDisplaySetting(configuration_.settings_);
             SendMusicPlayerUpdate(true);
             SendHaStatusSnapshot();
@@ -1538,11 +1849,13 @@ int MainTask:: parseConfigSetCommand(int seq, JsonObject data) {
         xSemaphoreGive(configuration_.mutex_);
     }
 
-    if (powerModeChanged) {
+    if (powerModeChanged)
+    {
         applyPowerMode(static_cast<Configuration::POWER_MODE>(configuration_.settings_.power_mode));
     }
 
-    if (pendingProfile >= 0) {
+    if (pendingProfile >= 0)
+    {
         configuration_.switchActiveProfile(static_cast<uint8_t>(pendingProfile));
         applyVoiceConfig();
         SendDisplaySetting(configuration_.settings_);
@@ -1554,276 +1867,319 @@ int MainTask:: parseConfigSetCommand(int seq, JsonObject data) {
         SendHaStatusSnapshot();
         SendHaStatusSnapshot();
     }
-    
+
     return 0;
 }
 
-void MainTask::onCommandReceived(int cmd, int seq, JsonObject data) {
-   // LOG_WARNING("Log", "Command received: " + String(cmd) + ", seq: " + String(seq));
-    
-    switch (cmd) {
-        case CMD_DEVICE_INFO_GET: {
-            DynamicJsonDocument deviceinfoDoc(128);
-            JsonObject deviceinfo = deviceinfoDoc.to<JsonObject>();
-            deviceinfo["device_name"] = "FunModularKeyBoard";
-            deviceinfo["device_id"] = "FMB001";
-            deviceinfo["firmware_version"] = "1.0.1";
-            protocol_.sendDeviceInfo(deviceinfo, seq);
-            break;
-        }
-        case CMD_KEYMAP_GET: {
-            constexpr size_t kKeymapDocCapacity = 12288;
-            DynamicJsonDocument keymapDoc(kKeymapDocCapacity);
-            JsonArray keymapArray = keymapDoc.to<JsonArray>();
-            int keymapEntryCount = 0;
-            
-            // JsonObject key1 = keymapArray.createNestedObject();
-            // key1["physical"] = 1;
-            // key1["logical"] = 'A';
-            
-            // JsonObject key2 = keymapArray.createNestedObject();
-            // key2["physical"] = 2;
-            // key2["logical"] = 'B';
+void MainTask::onCommandReceived(int cmd, int seq, JsonObject data)
+{
+    // LOG_WARNING("Log", "Command received: " + String(cmd) + ", seq: " + String(seq));
 
-            for (int i = 0; i < CONFIG_ALL_KEY_NUM; i++) {
-                auto function_key_str = configuration_.key_mappings_[i].function_key;
-                String normal_key_str;
-                String macro_str;
-                if (function_key_str.isEmpty()) {
-                    normal_key_str = buildKeySequenceString(configuration_.key_mappings_[i].normal_key,
-                                                            configuration_.key_mappings_[i].normal_key_count);
-                    macro_str = buildKeySequenceString(configuration_.key_mappings_[i].macros_key,
-                                                       configuration_.key_mappings_[i].macros_key_count);
-                } else {
-                    LOG_DEBUG("Log", "[CMD_KEYMAP_GET] physical = %d, function_key_str=%s", i + 1, function_key_str.c_str());
-                }
+    switch (cmd)
+    {
+    case CMD_DEVICE_INFO_GET:
+    {
+        DynamicJsonDocument deviceinfoDoc(128);
+        JsonObject deviceinfo = deviceinfoDoc.to<JsonObject>();
+        deviceinfo["device_name"] = "FunModularKeyBoard";
+        deviceinfo["device_id"] = "FMB001";
+        deviceinfo["firmware_version"] = "1.0.1";
+        protocol_.sendDeviceInfo(deviceinfo, seq);
+        break;
+    }
+    case CMD_KEYMAP_GET:
+    {
+        constexpr size_t kKeymapDocCapacity = 12288;
+        DynamicJsonDocument keymapDoc(kKeymapDocCapacity);
+        JsonArray keymapArray = keymapDoc.to<JsonArray>();
+        int keymapEntryCount = 0;
 
-                JsonObject key = keymapArray.createNestedObject();
-                if (key.isNull()) {
-                    LOG_ERROR("Log", "[CMD_KEYMAP_GET] JSON capacity exhausted at physical key %d (capacity=%u)",
-                              i + 1,
-                              static_cast<unsigned>(kKeymapDocCapacity));
-                    break;
-                }
-                key["physical"] = i + 1;
-                key["normal"] = normal_key_str;
-                key["macro"] = macro_str;
-                key["function"] = function_key_str;
-                ++keymapEntryCount;
+        // JsonObject key1 = keymapArray.createNestedObject();
+        // key1["physical"] = 1;
+        // key1["logical"] = 'A';
+
+        // JsonObject key2 = keymapArray.createNestedObject();
+        // key2["physical"] = 2;
+        // key2["logical"] = 'B';
+
+        for (int i = 0; i < CONFIG_ALL_KEY_NUM; i++)
+        {
+            auto function_key_str = configuration_.key_mappings_[i].function_key;
+            String normal_key_str;
+            String macro_str;
+            if (function_key_str.isEmpty())
+            {
+                normal_key_str = buildKeySequenceString(configuration_.key_mappings_[i].normal_key,
+                                                        configuration_.key_mappings_[i].normal_key_count);
+                macro_str = buildKeySequenceString(configuration_.key_mappings_[i].macros_key,
+                                                   configuration_.key_mappings_[i].macros_key_count);
+            }
+            else
+            {
+                LOG_DEBUG("Log", "[CMD_KEYMAP_GET] physical = %d, function_key_str=%s", i + 1, function_key_str.c_str());
             }
 
-            for (int i = 0; i < CONFIG_SPECIAL_INPUT_NUM; ++i) {
-                const char* inputId = Configuration::getSpecialInputId(i);
-                if (!inputId) {
-                    continue;
-                }
-
-                const KeyMapping& mapping = configuration_.special_key_mappings_[i];
-                String normal_key_str;
-                String macro_str;
-                String function_key_str = mapping.function_key;
-                if (function_key_str.isEmpty()) {
-                    normal_key_str = buildKeySequenceString(mapping.normal_key, mapping.normal_key_count);
-                    macro_str = buildKeySequenceString(mapping.macros_key, mapping.macros_key_count);
-                }
-
-                JsonObject key = keymapArray.createNestedObject();
-                if (key.isNull()) {
-                    LOG_ERROR("Log", "[CMD_KEYMAP_GET] JSON capacity exhausted at special input %s (capacity=%u)",
-                              inputId,
-                              static_cast<unsigned>(kKeymapDocCapacity));
-                    break;
-                }
-                key["physical"] = 0;
-                key["input_id"] = inputId;
-                key["normal"] = normal_key_str;
-                key["macro"] = macro_str;
-                key["function"] = function_key_str;
-                ++keymapEntryCount;
-            }
-
-            LOG_INFO("Log", "[CMD_KEYMAP_GET] sending %d keymap entries", keymapEntryCount);
-            
-            protocol_.sendKeymap(keymapArray, seq);
-            break;
-        }
-            
-        case CMD_KEYMAP_SET:
-            if (data.containsKey("keymap")) {
-                // 处理按键映射设置
-                if (parseKeymapSetCommand(seq, data) > 0) {
-                    configuration_.SaveKeyMapping();
-                    SendKeyMappedProfileUi();
-                    protocol_.sendSuccessResponse(CMD_KEYMAP_SET, seq, JsonObject());
-                } else {
-                    LOG_ERROR("Log", "CMD_KEYMAP_SET set error");
-                }
-            }
-            break;
-            
-        case CMD_CONFIG_GET: {
-            sendCurrentConfigSnapshot(seq);
-            break;
-        }
-            
-        case CMD_CONFIG_SET:
-            if (data.containsKey("config")) {
-                if (parseConfigSetCommand(seq, data) >= 0) {
-                    configuration_.SaveSetting();
-                    protocol_.sendSuccessResponse(CMD_CONFIG_SET, seq, JsonObject());
-                } else {
-                    LOG_ERROR("Log", "CMD_CONFIG_SET set error");
-                }
-            }
-            break;
-
-        case CMD_PROFILE_STATE:
-            sendCurrentProfileState(seq);
-            break;
-
-        case CMD_PROFILE_ICON_SET: {
-            if (!data.containsKey("profile_icon") || !data["profile_icon"].is<JsonObject>()) {
-                protocol_.sendErrorResponse("Missing profile_icon object", 2, seq);
+            JsonObject key = keymapArray.createNestedObject();
+            if (key.isNull())
+            {
+                LOG_ERROR("Log", "[CMD_KEYMAP_GET] JSON capacity exhausted at physical key %d (capacity=%u)",
+                          i + 1,
+                          static_cast<unsigned>(kKeymapDocCapacity));
                 break;
             }
+            key["physical"] = i + 1;
+            key["normal"] = normal_key_str;
+            key["macro"] = macro_str;
+            key["function"] = function_key_str;
+            ++keymapEntryCount;
+        }
 
-            JsonObject icon = data["profile_icon"];
-            const uint8_t requestedProfile = icon["profile"] | configuration_.settings_.active_keymap_profile;
-            if (requestedProfile >= CONFIG_PROFILE_COUNT) {
-                protocol_.sendErrorResponse("profile out of range", 3, seq);
+        for (int i = 0; i < CONFIG_SPECIAL_INPUT_NUM; ++i)
+        {
+            const char *inputId = Configuration::getSpecialInputId(i);
+            if (!inputId)
+            {
+                continue;
+            }
+
+            const KeyMapping &mapping = configuration_.special_key_mappings_[i];
+            String normal_key_str;
+            String macro_str;
+            String function_key_str = mapping.function_key;
+            if (function_key_str.isEmpty())
+            {
+                normal_key_str = buildKeySequenceString(mapping.normal_key, mapping.normal_key_count);
+                macro_str = buildKeySequenceString(mapping.macros_key, mapping.macros_key_count);
+            }
+
+            JsonObject key = keymapArray.createNestedObject();
+            if (key.isNull())
+            {
+                LOG_ERROR("Log", "[CMD_KEYMAP_GET] JSON capacity exhausted at special input %s (capacity=%u)",
+                          inputId,
+                          static_cast<unsigned>(kKeymapDocCapacity));
                 break;
             }
+            key["physical"] = 0;
+            key["input_id"] = inputId;
+            key["normal"] = normal_key_str;
+            key["macro"] = macro_str;
+            key["function"] = function_key_str;
+            ++keymapEntryCount;
+        }
 
-            String errorMessage;
-            bool success = false;
-            const bool clearIcon = icon["clear"] | false;
-            if (clearIcon) {
-                success = removeProfileIcon(requestedProfile);
-                if (!success) {
-                    errorMessage = "remove icon failed";
-                }
-            } else if (icon.containsKey("png_base64") && icon["png_base64"].is<const char*>()) {
-                success = saveProfileIconFromBase64(requestedProfile,
-                                                   icon["png_base64"].as<String>(),
-                                                   errorMessage);
-            } else {
-                errorMessage = "png_base64 missing";
-            }
+        LOG_INFO("Log", "[CMD_KEYMAP_GET] sending %d keymap entries", keymapEntryCount);
 
-            if (!success) {
-                protocol_.sendErrorResponse(errorMessage, 4, seq);
-                break;
-            }
+        protocol_.sendKeymap(keymapArray, seq);
+        break;
+    }
 
-            DynamicJsonDocument responseDoc(384);
-            JsonObject response = responseDoc.to<JsonObject>();
-            response["profile"] = requestedProfile;
-            response["profile_number"] = requestedProfile + 1;
-            response["has_custom_icon"] = profileIconExists(requestedProfile);
-            response["profile_name"] = Configuration::getProfileDisplayName(requestedProfile);
-            protocol_.sendSuccessResponse(CMD_PROFILE_ICON_SET, seq, response);
-
-            if (requestedProfile == configuration_.settings_.active_keymap_profile) {
+    case CMD_KEYMAP_SET:
+        if (data.containsKey("keymap"))
+        {
+            // 处理按键映射设置
+            if (parseKeymapSetCommand(seq, data) > 0)
+            {
+                configuration_.SaveKeyMapping();
                 SendKeyMappedProfileUi();
+                protocol_.sendSuccessResponse(CMD_KEYMAP_SET, seq, JsonObject());
             }
-            sendCurrentProfileState(0);
+            else
+            {
+                LOG_ERROR("Log", "CMD_KEYMAP_SET set error");
+            }
+        }
+        break;
+
+    case CMD_CONFIG_GET:
+    {
+        sendCurrentConfigSnapshot(seq);
+        break;
+    }
+
+    case CMD_CONFIG_SET:
+        if (data.containsKey("config"))
+        {
+            if (parseConfigSetCommand(seq, data) >= 0)
+            {
+                configuration_.SaveSetting();
+                protocol_.sendSuccessResponse(CMD_CONFIG_SET, seq, JsonObject());
+            }
+            else
+            {
+                LOG_ERROR("Log", "CMD_CONFIG_SET set error");
+            }
+        }
+        break;
+
+    case CMD_PROFILE_STATE:
+        sendCurrentProfileState(seq);
+        break;
+
+    case CMD_PROFILE_ICON_SET:
+    {
+        if (!data.containsKey("profile_icon") || !data["profile_icon"].is<JsonObject>())
+        {
+            protocol_.sendErrorResponse("Missing profile_icon object", 2, seq);
             break;
         }
-            
-        case CMD_FIRMWARE_INFO: {
-            DynamicJsonDocument firmwareDoc(128);
-            JsonObject firmware = firmwareDoc.to<JsonObject>();
-            firmware["version"] = "1.0.0";
-            firmware["author"] = "Your Name";
-            protocol_.sendFirmwareInfo(firmware, seq);
+
+        JsonObject icon = data["profile_icon"];
+        const uint8_t requestedProfile = icon["profile"] | configuration_.settings_.active_keymap_profile;
+        if (requestedProfile >= CONFIG_PROFILE_COUNT)
+        {
+            protocol_.sendErrorResponse("profile out of range", 3, seq);
             break;
         }
 
-        case CMD_PC_STATUS: {
-            if (!data.containsKey("pc_status") || !data["pc_status"].is<JsonObject>()) {
-                protocol_.sendErrorResponse("Missing pc_status object", 2, seq);
-                break;
+        String errorMessage;
+        bool success = false;
+        const bool clearIcon = icon["clear"] | false;
+        if (clearIcon)
+        {
+            success = removeProfileIcon(requestedProfile);
+            if (!success)
+            {
+                errorMessage = "remove icon failed";
             }
+        }
+        else if (icon.containsKey("png_base64") && icon["png_base64"].is<const char *>())
+        {
+            success = saveProfileIconFromBase64(requestedProfile,
+                                                icon["png_base64"].as<String>(),
+                                                errorMessage);
+        }
+        else
+        {
+            errorMessage = "png_base64 missing";
+        }
 
-            JsonObject pc = data["pc_status"];
-            String type = pc["type"] | "update";
+        if (!success)
+        {
+            protocol_.sendErrorResponse(errorMessage, 4, seq);
+            break;
+        }
 
-            if (type == "config") {
-                if (pc.containsKey("mask")) {
-                    configuration_.settings_.pc_status_mask = pc["mask"].as<int>();
-                    configuration_.SaveSetting();
-                }
-                protocol_.sendSuccessResponse(CMD_PC_STATUS, seq, JsonObject());
-                break;
+        DynamicJsonDocument responseDoc(384);
+        JsonObject response = responseDoc.to<JsonObject>();
+        response["profile"] = requestedProfile;
+        response["profile_number"] = requestedProfile + 1;
+        response["has_custom_icon"] = profileIconExists(requestedProfile);
+        response["profile_name"] = Configuration::getProfileDisplayName(requestedProfile);
+        protocol_.sendSuccessResponse(CMD_PROFILE_ICON_SET, seq, response);
+
+        if (requestedProfile == configuration_.settings_.active_keymap_profile)
+        {
+            SendKeyMappedProfileUi();
+        }
+        sendCurrentProfileState(0);
+        break;
+    }
+
+    case CMD_FIRMWARE_INFO:
+    {
+        DynamicJsonDocument firmwareDoc(128);
+        JsonObject firmware = firmwareDoc.to<JsonObject>();
+        firmware["version"] = "1.0.0";
+        firmware["author"] = "Your Name";
+        protocol_.sendFirmwareInfo(firmware, seq);
+        break;
+    }
+
+    case CMD_PC_STATUS:
+    {
+        if (!data.containsKey("pc_status") || !data["pc_status"].is<JsonObject>())
+        {
+            protocol_.sendErrorResponse("Missing pc_status object", 2, seq);
+            break;
+        }
+
+        JsonObject pc = data["pc_status"];
+        String type = pc["type"] | "update";
+
+        if (type == "config")
+        {
+            if (pc.containsKey("mask"))
+            {
+                configuration_.settings_.pc_status_mask = pc["mask"].as<int>();
+                configuration_.SaveSetting();
             }
-
-            PcStatusInfo status;
-            status.mask = pc["mask"] | static_cast<uint32_t>(configuration_.settings_.pc_status_mask);
-            status.caps_lock = pc["caps_lock"] | false;
-            status.num_lock = pc["num_lock"] | false;
-            status.scroll_lock = pc["scroll_lock"] | false;
-            status.network_connected = pc["network_connected"] | false;
-            status.on_ac_power = pc["on_ac_power"] | false;
-            status.battery_percent = pc["battery_percent"] | -1;
-            status.cpu_usage_percent = pc["cpu_usage_percent"] | -1.0f;
-            status.memory_usage_percent = pc["memory_usage_percent"] | -1.0f;
-            status.cpu_temp_c = pc["cpu_temp_c"] | -1.0f;
-            status.disk_io_percent = pc["disk_io_percent"] | -1.0f;
-            status.network_up_kbps = pc["network_up_kbps"] | -1.0f;
-            status.network_down_kbps = pc["network_down_kbps"] | -1.0f;
-
-            SendPcStatusUpdate(status);
             protocol_.sendSuccessResponse(CMD_PC_STATUS, seq, JsonObject());
             break;
         }
 
-        case CMD_MUSIC_STATUS: {
-            if (!data.containsKey("music_status") || !data["music_status"].is<JsonObject>()) {
-                protocol_.sendErrorResponse("Missing music_status object", 2, seq);
-                break;
-            }
+        PcStatusInfo status;
+        status.mask = pc["mask"] | static_cast<uint32_t>(configuration_.settings_.pc_status_mask);
+        status.caps_lock = pc["caps_lock"] | false;
+        status.num_lock = pc["num_lock"] | false;
+        status.scroll_lock = pc["scroll_lock"] | false;
+        status.network_connected = pc["network_connected"] | false;
+        status.on_ac_power = pc["on_ac_power"] | false;
+        status.battery_percent = pc["battery_percent"] | -1;
+        status.cpu_usage_percent = pc["cpu_usage_percent"] | -1.0f;
+        status.memory_usage_percent = pc["memory_usage_percent"] | -1.0f;
+        status.cpu_temp_c = pc["cpu_temp_c"] | -1.0f;
+        status.disk_io_percent = pc["disk_io_percent"] | -1.0f;
+        status.network_up_kbps = pc["network_up_kbps"] | -1.0f;
+        status.network_down_kbps = pc["network_down_kbps"] | -1.0f;
 
-            JsonObject music = data["music_status"];
-            musicPlayerState_.connected = music["connected"] | false;
-            musicPlayerState_.is_playing = music["is_playing"] | false;
-            musicPlayerState_.is_paused = music["is_paused"] | false;
-            musicPlayerState_.can_prev = music["can_prev"] | false;
-            musicPlayerState_.can_next = music["can_next"] | false;
-            musicPlayerState_.current_seconds = (music["position_ms"] | 0) / 1000;
-            musicPlayerState_.total_seconds = (music["duration_ms"] | 0) / 1000;
+        SendPcStatusUpdate(status);
+        protocol_.sendSuccessResponse(CMD_PC_STATUS, seq, JsonObject());
+        break;
+    }
 
-            String title = music["title"] | "WAITING FOR PLAYER";
-            String artist = music["artist"] | "";
-            String playerName = music["player"] | "PC MUSIC";
-            String lyricCurrent = music["lyric_current"] | "";
-            String lyricNext = music["lyric_next"] | "";
-
-            copyUtf8Truncated(musicPlayerState_.title, sizeof(musicPlayerState_.title), title);
-            copyUtf8Truncated(musicPlayerState_.artist, sizeof(musicPlayerState_.artist), artist);
-            copyUtf8Truncated(musicPlayerState_.player_name, sizeof(musicPlayerState_.player_name), playerName);
-            copyUtf8Truncated(musicPlayerState_.lyric_current, sizeof(musicPlayerState_.lyric_current), lyricCurrent);
-            copyUtf8Truncated(musicPlayerState_.lyric_next, sizeof(musicPlayerState_.lyric_next), lyricNext);
-
-            lastMusicStatusRxMs_ = millis();
-            lastMusicProgressTickMs_ = lastMusicStatusRxMs_;
-            SendMusicPlayerUpdate(true);
-            protocol_.sendSuccessResponse(CMD_MUSIC_STATUS, seq, JsonObject());
+    case CMD_MUSIC_STATUS:
+    {
+        if (!data.containsKey("music_status") || !data["music_status"].is<JsonObject>())
+        {
+            protocol_.sendErrorResponse("Missing music_status object", 2, seq);
             break;
         }
+
+        JsonObject music = data["music_status"];
+        musicPlayerState_.connected = music["connected"] | false;
+        musicPlayerState_.is_playing = music["is_playing"] | false;
+        musicPlayerState_.is_paused = music["is_paused"] | false;
+        musicPlayerState_.can_prev = music["can_prev"] | false;
+        musicPlayerState_.can_next = music["can_next"] | false;
+        musicPlayerState_.current_seconds = (music["position_ms"] | 0) / 1000;
+        musicPlayerState_.total_seconds = (music["duration_ms"] | 0) / 1000;
+
+        String title = music["title"] | "WAITING FOR PLAYER";
+        String artist = music["artist"] | "";
+        String playerName = music["player"] | "PC MUSIC";
+        String lyricCurrent = music["lyric_current"] | "";
+        String lyricNext = music["lyric_next"] | "";
+
+        copyUtf8Truncated(musicPlayerState_.title, sizeof(musicPlayerState_.title), title);
+        copyUtf8Truncated(musicPlayerState_.artist, sizeof(musicPlayerState_.artist), artist);
+        copyUtf8Truncated(musicPlayerState_.player_name, sizeof(musicPlayerState_.player_name), playerName);
+        copyUtf8Truncated(musicPlayerState_.lyric_current, sizeof(musicPlayerState_.lyric_current), lyricCurrent);
+        copyUtf8Truncated(musicPlayerState_.lyric_next, sizeof(musicPlayerState_.lyric_next), lyricNext);
+
+        lastMusicStatusRxMs_ = millis();
+        lastMusicProgressTickMs_ = lastMusicStatusRxMs_;
+        SendMusicPlayerUpdate(true);
+        protocol_.sendSuccessResponse(CMD_MUSIC_STATUS, seq, JsonObject());
+        break;
+    }
     }
 }
 
-void MainTask::onKeyEvent(int physicalKey, int logicalKey, bool pressed) {
-    //LOG_DEBUG("Log", "Key: " + String(physicalKey) + " -> " + String(logicalKey) + 
-    //               " " + (pressed ? "PRESSED" : "RELEASED"));
+void MainTask::onKeyEvent(int physicalKey, int logicalKey, bool pressed)
+{
+    // LOG_DEBUG("Log", "Key: " + String(physicalKey) + " -> " + String(logicalKey) +
+    //                " " + (pressed ? "PRESSED" : "RELEASED"));
 }
 
-void MainTask::updateProtocolTcpEndpoint() {
+void MainTask::updateProtocolTcpEndpoint()
+{
     constexpr uint16_t kTcpPort = 30000;
     constexpr uint16_t kDiscoveryPort = 30001;
     constexpr uint32_t kDiscoveryTimeoutMs = 800;
 
-    if (!configuration_.settings_.connect_host || WiFi.status() != WL_CONNECTED) {
+    if (!configuration_.settings_.connect_host || WiFi.status() != WL_CONNECTED)
+    {
         protocol_.disableTcpClient();
         return;
     }
@@ -1831,18 +2187,22 @@ void MainTask::updateProtocolTcpEndpoint() {
     // UDP 广播发现服务端 IP
     IPAddress serverIp;
     WiFiUDP udp;
-    if (udp.begin(kDiscoveryPort)) {
+    if (udp.begin(kDiscoveryPort))
+    {
         const char kDiscoveryMsg[] = "FUNKEYBOARD_DISCOVER";
         udp.beginPacket(IPAddress(255, 255, 255, 255), kDiscoveryPort);
-        udp.write(reinterpret_cast<const uint8_t*>(kDiscoveryMsg), sizeof(kDiscoveryMsg) - 1);
+        udp.write(reinterpret_cast<const uint8_t *>(kDiscoveryMsg), sizeof(kDiscoveryMsg) - 1);
         udp.endPacket();
 
         uint32_t startMs = millis();
-        while (millis() - startMs < kDiscoveryTimeoutMs) {
-            if (udp.parsePacket() >= 8) {
+        while (millis() - startMs < kDiscoveryTimeoutMs)
+        {
+            if (udp.parsePacket() >= 8)
+            {
                 char buf[64] = {0};
                 int len = udp.read(buf, sizeof(buf) - 1);
-                if (len > 0 && strstr(buf, "FUNKEYBOARD_HERE")) {
+                if (len > 0 && strstr(buf, "FUNKEYBOARD_HERE"))
+                {
                     serverIp = udp.remoteIP();
                     LOG_INFO("Log", "UDP discovery found server at %s", serverIp.toString().c_str());
                     break;
@@ -1853,7 +2213,8 @@ void MainTask::updateProtocolTcpEndpoint() {
         udp.stop();
     }
 
-    if (serverIp == IPAddress(0, 0, 0, 0)) {
+    if (serverIp == IPAddress(0, 0, 0, 0))
+    {
         serverIp = IPAddress(192, 168, 31, 1);
         LOG_INFO("Log", "UDP discovery failed, using fallback IP %s", serverIp.toString().c_str());
     }
@@ -1862,73 +2223,88 @@ void MainTask::updateProtocolTcpEndpoint() {
     LOG_INFO("Log", "TCP client target=%s:%u", serverIp.toString().c_str(), kTcpPort);
 }
 
-bool MainTask::parseModADataOptimized(const char* input, ModAData& data) {
+#if ENABLE_EXTENSION_MODULES
+bool MainTask::parseModADataOptimized(const char *input, ModAData &data)
+{
     // 跳过响应头
-    const char* p = strstr(input, "MODA:");
-    if (!p) {
+    const char *p = strstr(input, "MODA:");
+    if (!p)
+    {
         Serial.println("strstr MODA retun error!");
         return false;
     }
-    p += 5;  // 跳过"MODA:"
-    
+    p += 5; // 跳过"MODA:"
+
     // 解析Slider1
-    if (sscanf(p, "Slider1:[%u][%u][%u],", 
+    if (sscanf(p, "Slider1:[%u][%u][%u],",
                &data.slider1_range_min,
                &data.slider1_range_max,
-               &data.slider1_value) != 3) {
+               &data.slider1_value) != 3)
+    {
         return false;
     }
-    
+
     // 移动到Slider2
     p = strstr(p, "Slider2:");
-    if (!p) return false;
-    if (sscanf(p, "Slider2:[%u][%u][%u],", 
+    if (!p)
+        return false;
+    if (sscanf(p, "Slider2:[%u][%u][%u],",
                &data.slider2_range_min,
                &data.slider2_range_max,
-               &data.slider2_value) != 3) {
+               &data.slider2_value) != 3)
+    {
         return false;
     }
-    
+
     // 解析Knob1
     p = strstr(p, "Knob1:");
-    if (!p) return false;
-    if (sscanf(p, "Knob1:[%hhu][%hhu],", 
+    if (!p)
+        return false;
+    if (sscanf(p, "Knob1:[%hhu][%hhu],",
                &data.knob1_status,
-               &data.knob1_press) != 2) {
+               &data.knob1_press) != 2)
+    {
         return false;
     }
-    
+
     // 解析Knob2
     p = strstr(p, "Knob2:");
-    if (!p) return false;
-    if (sscanf(p, "Knob2:[%hhu][%hhu],", 
+    if (!p)
+        return false;
+    if (sscanf(p, "Knob2:[%hhu][%hhu],",
                &data.knob2_status,
-               &data.knob2_press) != 2) {
+               &data.knob2_press) != 2)
+    {
         return false;
     }
-    
+
     // 解析Knob3
     p = strstr(p, "Knob3:");
-    if (!p) return false;
-    if (sscanf(p, "Knob3:[%hhu][%hhu],", 
+    if (!p)
+        return false;
+    if (sscanf(p, "Knob3:[%hhu][%hhu],",
                &data.knob3_status,
-               &data.knob3_press) != 2) {
+               &data.knob3_press) != 2)
+    {
         return false;
     }
-    
+
     // 解析index
     p = strstr(p, "index=");
-    if (!p) return false;
-    if (sscanf(p, "index=%hhu/over", &data.index) != 1) {
+    if (!p)
+        return false;
+    if (sscanf(p, "index=%hhu/over", &data.index) != 1)
+    {
         return false;
     }
-    
+
     return true;
 }
 
-
-void MainTask::handleModData(String data) {
-    if (data.startsWith("[I2C_RESPONSE]MODA:")) {
+void MainTask::handleModData(String data)
+{
+    if (data.startsWith("[I2C_RESPONSE]MODA:"))
+    {
         //[I2C_RESPONSE]MODA:Slider1:[0][1000][50],Slider2:[0][1000][150],Knob1:[0][0],Knob2:[0][0],Knob3:[0][0],index=%d/over
         String temp = data.substring(data.indexOf("MODA:"), data.indexOf("/over"));
         parseModADataOptimized(temp.c_str(), modAData_);
@@ -1954,43 +2330,48 @@ void MainTask::handleModData(String data) {
                               lastKnob3Status_,
                               lastKnob3Press_);
         handleSliderInput("SLIDER1_LEFT",
-                  "SLIDER1_RIGHT",
-                  lastSlider1Value_,
-                  slider1AccumulatedDelta_,
-                  modAData_.slider1_value,
-                  modAData_.slider1_range_min,
-                  modAData_.slider1_range_max);
+                          "SLIDER1_RIGHT",
+                          lastSlider1Value_,
+                          slider1AccumulatedDelta_,
+                          modAData_.slider1_value,
+                          modAData_.slider1_range_min,
+                          modAData_.slider1_range_max);
         handleSliderInput("SLIDER2_LEFT",
-                  "SLIDER2_RIGHT",
-                  lastSlider2Value_,
-                  slider2AccumulatedDelta_,
-                  modAData_.slider2_value,
-                  modAData_.slider2_range_min,
-                  modAData_.slider2_range_max);
+                          "SLIDER2_RIGHT",
+                          lastSlider2Value_,
+                          slider2AccumulatedDelta_,
+                          modAData_.slider2_value,
+                          modAData_.slider2_range_min,
+                          modAData_.slider2_range_max);
         // LOG_DEBUG("Log", "=== ModAData ===");
-        // LOG_DEBUG("Log", "Slider1: min=%u, max=%u, value=%u\n", 
+        // LOG_DEBUG("Log", "Slider1: min=%u, max=%u, value=%u\n",
         //             modAData_.slider1_range_min, modAData_.slider1_range_max, modAData_.slider1_value);
-        // LOG_DEBUG("Log", "Slider2: min=%u, max=%u, value=%u\n", 
+        // LOG_DEBUG("Log", "Slider2: min=%u, max=%u, value=%u\n",
         //             modAData_.slider2_range_min, modAData_.slider2_range_max, modAData_.slider2_value);
         // LOG_DEBUG("Log", "Knob1: status=%u, press=%u\n", modAData_.knob1_status, modAData_.knob1_press);
         // LOG_DEBUG("Log", "Knob2: status=%u, press=%u\n", modAData_.knob2_status, modAData_.knob2_press);
         // LOG_DEBUG("Log", "Knob3: status=%u, press=%u\n", modAData_.knob3_status, modAData_.knob3_press);
         // LOG_DEBUG("Log", "Index: %u\n", modAData_.index);
         // LOG_DEBUG("Log", "================\n");
-
-    } else if (data.startsWith("[I2C_RESPONSE]MODB:")) {
+    }
+    else if (data.startsWith("[I2C_RESPONSE]MODB:"))
+    {
         String temp = data.substring(data.indexOf("MODB:"), data.indexOf("/over"));
-        //LOG_DEBUG("Log", "handleModData temp=%s",temp.c_str());
-        if (temp.startsWith("MODB:Position")) {
+        // LOG_DEBUG("Log", "handleModData temp=%s",temp.c_str());
+        if (temp.startsWith("MODB:Position"))
+        {
             String temp_position = temp.substring(temp.indexOf("Position=") + sizeof("Position=") - 1);
-            //LOG_DEBUG("Log", "handleModData temp_position=%s",temp_position.c_str());
+            // LOG_DEBUG("Log", "handleModData temp_position=%s",temp_position.c_str());
             int position = temp_position.toInt();
-            //LOG_DEBUG("Log", "handleModData temp_position=%d",position);
+            // LOG_DEBUG("Log", "handleModData temp_position=%d",position);
             static int last_position = 0;
-            //LOG_DEBUG("Log", "handleModData position=%d,last_position=%d",position, last_position);
-            if ((position - last_position) > 0) {
+            // LOG_DEBUG("Log", "handleModData position=%d,last_position=%d",position, last_position);
+            if ((position - last_position) > 0)
+            {
                 handleSpecialInputEvent("MODB_KNOB_RIGHT");
-            } else if ((position - last_position) < 0) {
+            }
+            else if ((position - last_position) < 0)
+            {
                 handleSpecialInputEvent("MODB_KNOB_LEFT");
             }
             last_position = position;
@@ -1998,7 +2379,10 @@ void MainTask::handleModData(String data) {
     }
 }
 
-void MainTask::run() {
+#endif
+
+void MainTask::run()
+{
 
     logHeapSnapshot("run:start");
 
@@ -2008,15 +2392,17 @@ void MainTask::run() {
     protocol_.begin(115200);
 
     // 获取按键的映射
-    for (int i = 1; i <= CONFIG_ALL_KEY_NUM; i++) {
+    for (int i = 1; i <= CONFIG_ALL_KEY_NUM; i++)
+    {
         KeyMapping km = configuration_.getKeyMapping(i);
         // LOG_DEBUG("Log","Key%d: %d normal_key",i, km.normal_key_count);
         // for (int n = 0; n < configuration_.getKeyMapping(i).normal_key_count; n++) {
         //     LOG_DEBUG("Log"," + 0x%02X", km.normal_key[n]);
         // }
-    }     
-    for (int i = 1; i <= CONFIG_ALL_KEY_NUM; i++) {  
-        KeyMapping km = configuration_.getKeyMapping(i);  
+    }
+    for (int i = 1; i <= CONFIG_ALL_KEY_NUM; i++)
+    {
+        KeyMapping km = configuration_.getKeyMapping(i);
         // LOG_DEBUG("Log","Key%d: %d macros_key",i, km.macros_key_count);
         // for (int n = 0; n < configuration_.getKeyMapping(i).macros_key_count; n++) {
         //     LOG_DEBUG("Log"," + 0x%02X", km.macros_key[n]);
@@ -2024,14 +2410,19 @@ void MainTask::run() {
     }
 
     // BLE-only 模式下释放经典蓝牙内存，避免与 WiFi 同时初始化时堆内存不足。
-    if (configuration_.settings_.work_mode == Configuration::BLUETOOTH_KEYBOARD_MODE) {
+    if (configuration_.settings_.work_mode == Configuration::BLUETOOTH_KEYBOARD_MODE)
+    {
         static bool btClassicMemReleased = false;
-        if (!btClassicMemReleased) {
+        if (!btClassicMemReleased)
+        {
             esp_err_t err = esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);
-            if (err == ESP_OK || err == ESP_ERR_INVALID_STATE) {
+            if (err == ESP_OK || err == ESP_ERR_INVALID_STATE)
+            {
                 btClassicMemReleased = true;
                 LOG_INFO("Log", "Released classic BT memory for BLE-only mode");
-            } else {
+            }
+            else
+            {
                 LOG_WARNING("Log", "Failed to release classic BT memory, err=%d", err);
             }
         }
@@ -2047,16 +2438,20 @@ void MainTask::run() {
     logHeapSnapshot("run:after_setWorkMode");
 
     // 蓝牙初始化
-    if (currentWorkMode_ == Configuration::BLUETOOTH_KEYBOARD_MODE) {
+    if (currentWorkMode_ == Configuration::BLUETOOTH_KEYBOARD_MODE)
+    {
         LOG_DEBUG("Log", "Starting BLE work!");
         delay(150);
-    } else {
+    }
+    else
+    {
         LOG_DEBUG("Log", "Starting USB work!");
     }
 
     // 恢复板载EC11原始功能：仅用于本机屏幕/菜单切换，不进入外设按键映射模型。
     rotaryEncoder_.Begin();
-    rotaryEncoder_.SetCallback([this](uint8_t key) {
+    rotaryEncoder_.SetCallback([this](uint8_t key)
+                               {
         if (ui_get_active_screen_tag() == UI_SCREEN_MUSIC_SECONDARY) {
             if (key == LV_KEY_LEFT) {
                 SendMusicControlCommand("previous");
@@ -2093,8 +2488,7 @@ void MainTask::run() {
                 return;
             }
         }
-        this->SendDisplayAction(key);
-    });
+        this->SendDisplayAction(key); });
 
     SendKeyMappedProfileUi();
     sendCurrentProfileState(0);
@@ -2102,16 +2496,22 @@ void MainTask::run() {
     snprintf(musicPlayerState_.player_name, sizeof(musicPlayerState_.player_name), "%s", "PC MUSIC");
     SendMusicPlayerUpdate(true);
 
-    if (configuration_.settings_.wifi_switch == true) {
+    if (configuration_.settings_.wifi_switch == true)
+    {
         logHeapSnapshot("run:before_wifi_connect");
-        if (desiredMode == Configuration::BLUETOOTH_KEYBOARD_MODE) {
+        if (desiredMode == Configuration::BLUETOOTH_KEYBOARD_MODE)
+        {
             stopWiFiReconnect();
             LOG_WARNING("Log", "WiFi disabled in BLE mode due memory limits");
-        } else {
+        }
+        else
+        {
             scheduleWiFiConnectAttempt(true);
         }
         logHeapSnapshot("run:after_wifi_phase");
-    } else {
+    }
+    else
+    {
         stopWiFiReconnect();
         LOG_DEBUG("Log", "WiFi off!");
     }
@@ -2134,49 +2534,55 @@ void MainTask::run() {
     // }
 
     // 设置喇叭音量
-    speaker_.SetVolume(configuration_.settings_.device_volume / 5); //0~21
-    speaker_.PlayLocalAudio("/coin2.wav"); 
+    speaker_.SetVolume(configuration_.settings_.device_volume / 5); // 0~21
+    speaker_.PlayLocalAudio("/coin2.wav");
 
     // 初始化和上位机通信协议
     // protocol_.setCommandCallback(onCommandReceived);
     // protocol_.setKeyEventCallback(onKeyEvent);
     // protocol_.setLogCallback(onLogMessage);
     // 初始化和上位机通信协议，设置回调函数
-    protocol_.setCommandCallback([this](int cmd, int seq, JsonObject data) {
-        onCommandReceived(cmd, seq, data);
-    });
-    
-    protocol_.setKeyEventCallback([this](int physicalKey, int logicalKey, bool pressed) {
-        onKeyEvent(physicalKey, logicalKey, pressed);
-    });
+    protocol_.setCommandCallback([this](int cmd, int seq, JsonObject data)
+                                 { onCommandReceived(cmd, seq, data); });
+
+    protocol_.setKeyEventCallback([this](int physicalKey, int logicalKey, bool pressed)
+                                  { onKeyEvent(physicalKey, logicalKey, pressed); });
 
     // 外接I2C模块配置
-    if (i2cMaster_.begin()) {
+#if ENABLE_EXTENSION_MODULES
+    if (i2cMaster_.begin())
+    {
         LOG_DEBUG("Log", "I2C Master started successfully");
-    }    
+    }
 
-    //外接模块状态初始化
+    // 外接模块状态初始化
     status_modA_.mod_type = MODA;
     status_modA_.status = false;
     status_modB_.mod_type = MODB;
     status_modB_.status = false;
+#else
+    LOG_INFO("Extension", "ModA/ModB support disabled at build time");
+#endif
 
-    while (1) {
+    while (1)
+    {
         isNeedUpdateDisplay = 0;
+#if ENABLE_EXTENSION_MODULES
         isNeedI2cRead = 0;
+#endif
         static uint32_t lastHaStatusMs = 0;
         static uint32_t lastHostConnectKickMs = 0;
 
-        //MIC读取
-        // int16_t samples[BUFFER_SIZE];
-        // size_t samples_read = mic_.Read(samples, BUFFER_SIZE);
-        // // 处理音频数据
-        // if (samples_read > 0) {
-        //     audioAnalyzer_.process(samples, samples_read);
-        //     // 发送频谱数据到显示任务
-        //     SendSpectrumDisplay(audioAnalyzer_.getBands(), NUM_BANDS);
-        // }
-        
+        // MIC读取
+        //  int16_t samples[BUFFER_SIZE];
+        //  size_t samples_read = mic_.Read(samples, BUFFER_SIZE);
+        //  // 处理音频数据
+        //  if (samples_read > 0) {
+        //      audioAnalyzer_.process(samples, samples_read);
+        //      // 发送频谱数据到显示任务
+        //      SendSpectrumDisplay(audioAnalyzer_.getBands(), NUM_BANDS);
+        //  }
+
         // LOG_DEBUG("Log", "PCM samples_read=%d start: ", samples_read);
         // for (int i = 0; i < samples_read; i++) {
         //     LOG_DEBUG("Log","%x ",samples[i]);  // 示例：打印PCM数据
@@ -2187,10 +2593,14 @@ void MainTask::run() {
         speaker_.Loop();
 
         const uint8_t musicControlRequest = ui_MusicScreenSecondary_consume_control_request();
-        if (musicControlRequest == UI_MUSIC_CONTROL_PREV) {
+        if (musicControlRequest == UI_MUSIC_CONTROL_PREV)
+        {
             SendMusicControlCommand("previous");
-        } else if (musicControlRequest == UI_MUSIC_CONTROL_TOGGLE) {
-            if (musicPlayerState_.connected) {
+        }
+        else if (musicControlRequest == UI_MUSIC_CONTROL_TOGGLE)
+        {
+            if (musicPlayerState_.connected)
+            {
                 updateLocalMusicProgress(millis());
                 const bool nextPlayingState = !musicPlayerState_.is_playing;
                 musicPlayerState_.is_playing = nextPlayingState;
@@ -2200,7 +2610,9 @@ void MainTask::run() {
                 SendMusicPlayerUpdate(true);
             }
             SendMusicControlCommand("toggle");
-        } else if (musicControlRequest == UI_MUSIC_CONTROL_NEXT) {
+        }
+        else if (musicControlRequest == UI_MUSIC_CONTROL_NEXT)
+        {
             SendMusicControlCommand("next");
         }
 
@@ -2213,24 +2625,29 @@ void MainTask::run() {
 
         ui_settings_snapshot_t pendingSettings{};
         bool persistUiSettings = false;
-        if (consumeUiSettingsRequest(pendingSettings, persistUiSettings)) {
+        if (consumeUiSettingsRequest(pendingSettings, persistUiSettings))
+        {
             applyUiSettingsSnapshot(pendingSettings, persistUiSettings);
         }
 
         const uint32_t nowMs = millis();
         processWiFiReconnect(nowMs);
         updateLocalMusicProgress(nowMs);
-        if (configuration_.settings_.connect_host && WiFi.status() == WL_CONNECTED && !protocol_.isTcpConnected()) {
-            if (nowMs - lastHostConnectKickMs >= 3000) {
+        if (configuration_.settings_.connect_host && WiFi.status() == WL_CONNECTED && !protocol_.isTcpConnected())
+        {
+            if (nowMs - lastHostConnectKickMs >= 3000)
+            {
                 lastHostConnectKickMs = nowMs;
                 updateProtocolTcpEndpoint();
             }
         }
-        if (nowMs - lastHaStatusMs >= 2500) {
+        if (nowMs - lastHaStatusMs >= 2500)
+        {
             lastHaStatusMs = nowMs;
             SendHaStatusSnapshot();
         }
-        if (musicPlayerState_.connected && lastMusicStatusRxMs_ > 0 && (nowMs - lastMusicStatusRxMs_ > 30000)) {
+        if (musicPlayerState_.connected && lastMusicStatusRxMs_ > 0 && (nowMs - lastMusicStatusRxMs_ > 30000))
+        {
             musicPlayerState_.connected = false;
             musicPlayerState_.is_playing = false;
             musicPlayerState_.is_paused = false;
@@ -2245,52 +2662,65 @@ void MainTask::run() {
         }
         SendMusicPlayerUpdate(false);
 
-        //读取I2C外接模块数据
-        //todo:增加模块设备配置判断
+        // 读取I2C外接模块数据
+        // todo:增加模块设备配置判断
+#if ENABLE_EXTENSION_MODULES
         auto devices = i2cMaster_.getDiscoveredDevices();
-        //LOG_DEBUG("Log", "devices.size=%d", devices.size());
+        // LOG_DEBUG("Log", "devices.size=%d", devices.size());
         static uint32_t lastTime = 0;
         uint32_t nowtTime = millis();
-        //LOG_DEBUG("Log", "nowtTime = %d, lastTime = %d", nowtTime, lastTime);
-        if ((nowtTime - lastTime) > 3000) {//2000ms
+        // LOG_DEBUG("Log", "nowtTime = %d, lastTime = %d", nowtTime, lastTime);
+        if ((nowtTime - lastTime) > 3000)
+        { // 2000ms
             lastTime = nowtTime;
 
-            //uint32_t lastTime111 = millis();
-            if (i2cMaster_.scanDevices(MODA_I2C_SLAVE_ADDR)) {
-                //LOG_DEBUG("Log", "Devices MODA is connected!!!");
+            // uint32_t lastTime111 = millis();
+            if (i2cMaster_.scanDevices(MODA_I2C_SLAVE_ADDR))
+            {
+                // LOG_DEBUG("Log", "Devices MODA is connected!!!");
                 status_modA_.status = true;
                 SendModuleStatus(status_modA_);
-            } else {
+            }
+            else
+            {
                 status_modA_.status = false;
                 SendModuleStatus(status_modA_);
             }
-            //LOG_DEBUG("Log","111111111  TIME=%d", millis() - lastTime111);
-            //uint32_t lastTime222 = millis();
-            if (i2cMaster_.scanDevices(MODB_I2C_SLAVE_ADDR)) {
-                //LOG_DEBUG("Log", "Devices MODB is connected!!!");
+            // LOG_DEBUG("Log","111111111  TIME=%d", millis() - lastTime111);
+            // uint32_t lastTime222 = millis();
+            if (i2cMaster_.scanDevices(MODB_I2C_SLAVE_ADDR))
+            {
+                // LOG_DEBUG("Log", "Devices MODB is connected!!!");
                 status_modB_.status = true;
                 SendModuleStatus(status_modB_);
-            } else {
+            }
+            else
+            {
                 status_modB_.status = false;
                 SendModuleStatus(status_modB_);
             }
-            //LOG_DEBUG("Log","222222222  TIME=%d", millis() - lastTime222);
+            // LOG_DEBUG("Log","222222222  TIME=%d", millis() - lastTime222);
         }
 
         static uint32_t lastTime_send = 0;
         uint32_t nowtTime_send = millis();
-        //发送命令获取数据
-        if ((nowtTime_send - lastTime_send) > 30) {//30ms
+        // 发送命令获取数据
+        if ((nowtTime_send - lastTime_send) > 30)
+        { // 30ms
             lastTime_send = nowtTime_send;
-            for (auto device : devices) {
-                if (i2cMaster_.sendCommandOnly(device.address, "GETDATA")) {
+            for (auto device : devices)
+            {
+                if (i2cMaster_.sendCommandOnly(device.address, "GETDATA"))
+                {
                     isNeedI2cRead = true;
-                    //LOG_DEBUG("Log","  isNeedI2cRead = true \r\n");
-                }                
-            }                
+                    // LOG_DEBUG("Log","  isNeedI2cRead = true \r\n");
+                }
+            }
         }
 
-        //键盘矩阵
+        // 键盘矩阵
+#endif
+
         uint32_t key_value = 0;
         uint32_t changes = scanner_.scan();
         key_value = scanner_.getStableState();
@@ -2298,11 +2728,14 @@ void MainTask::run() {
 
         uint32_t pressedEdges = (~lastStableKeyState_) & key_value;
         uint32_t releasedEdges = lastStableKeyState_ & (~key_value);
-        if (ui_get_active_screen_tag() == UI_SCREEN_SETTING_SECONDARY) {
-            if (pressedEdges & kSettingsUiKey1Bit) {
+        if (ui_get_active_screen_tag() == UI_SCREEN_SETTING_SECONDARY)
+        {
+            if (pressedEdges & kSettingsUiKey1Bit)
+            {
                 SendDisplayAction(LV_KEY_LEFT);
             }
-            if (pressedEdges & kSettingsUiKey2Bit) {
+            if (pressedEdges & kSettingsUiKey2Bit)
+            {
                 SendDisplayAction(LV_KEY_RIGHT);
             }
             pressedEdges &= ~kSettingsUiOverrideMask;
@@ -2311,90 +2744,110 @@ void MainTask::run() {
         }
         reportPhysicalKeyEdges(pressedEdges, true);
         reportPhysicalKeyEdges(releasedEdges, false);
-        if (pressedEdges & voiceTriggerBit_) {
+        if (pressedEdges & voiceTriggerBit_)
+        {
             startVoiceCapture();
         }
 
-        if (voiceCaptureActive_) {
+        if (voiceCaptureActive_)
+        {
             voiceRecognizer_.feedCapture();
         }
 
-        if (releasedEdges & voiceTriggerBit_) {
+        if (releasedEdges & voiceTriggerBit_)
+        {
             finishVoiceCapture();
         }
         lastStableKeyState_ = key_value;
 
         // 触发键只用于语音，不再透传成普通按键。
         host_key_value &= ~voiceTriggerBit_;
-        if (changes && currentKeyboard_) {
-            //LOG_DEBUG("Log","key_value = %x", key_value);
+        if (changes && currentKeyboard_)
+        {
+            // LOG_DEBUG("Log","key_value = %x", key_value);
             handleKeyEvent(host_key_value);
         }
-        
+
         // 当需要更新显示时
-        //if(isNeedUpdateDisplay) {
-            //sendDisplayUpdate();
+        // if(isNeedUpdateDisplay) {
+        // sendDisplayUpdate();
         //}
 
-        //读取I2C值 
-        if (isNeedI2cRead) {
-            for (auto device : devices) {
+        // 读取I2C值
+#if ENABLE_EXTENSION_MODULES
+        if (isNeedI2cRead)
+        {
+            for (auto device : devices)
+            {
                 String response = i2cMaster_.readFromDevice(device.address);
-                //LOG_DEBUG("Log","  GETDATA ori response: %s\r\n", response.c_str());
-                if (!response.isEmpty() && (response.startsWith("[I2C_RESPONSE]"))) {
-                    //LOG_DEBUG("Log","  GETDATA Response: %s\r\n", response.c_str());
+                // LOG_DEBUG("Log","  GETDATA ori response: %s\r\n", response.c_str());
+                if (!response.isEmpty() && (response.startsWith("[I2C_RESPONSE]")))
+                {
+                    // LOG_DEBUG("Log","  GETDATA Response: %s\r\n", response.c_str());
                     handleModData(response);
                     response.clear();
                 }
             }
         }
 
+#endif
+
         usleep(100);
     }
 }
 
-void MainTask::SendDisplayAction(uint8_t action) {
+void MainTask::SendDisplayAction(uint8_t action)
+{
     DisplayMessage msg;
     msg.type = uint8_t(MainCommand::ACTION_INPUT);
     msg.action = action;
     // 发送消息到显示任务
-    if(message_queue_ != nullptr) {
+    if (message_queue_ != nullptr)
+    {
         xQueueSend(message_queue_, &msg, portMAX_DELAY);
     }
 }
 
-void MainTask::SendDisplayKeyInput(uint32_t key_value) {
+void MainTask::SendDisplayKeyInput(uint32_t key_value)
+{
     DisplayMessage msg;
     msg.type = uint8_t(MainCommand::KEY_INPUT);
     msg.key_value = key_value;
     // 发送消息到显示任务
-    if(message_queue_ != nullptr) {
+    if (message_queue_ != nullptr)
+    {
         xQueueSend(message_queue_, &msg, portMAX_DELAY);
     }
 }
 
-void MainTask::SendAsrRecordingState(bool isRecording) {
+void MainTask::SendAsrRecordingState(bool isRecording)
+{
     DisplayMessage msg;
     msg.type = uint8_t(MainCommand::ASR_RECORDING_STATE);
     msg.asr_recording = isRecording;
-    if (message_queue_ != nullptr) {
+    if (message_queue_ != nullptr)
+    {
         xQueueSend(message_queue_, &msg, portMAX_DELAY);
     }
     SendHaStatusSnapshot();
 }
 
-void MainTask::SendPcStatusUpdate(const PcStatusInfo& status) {
+void MainTask::SendPcStatusUpdate(const PcStatusInfo &status)
+{
     DisplayMessage msg;
     msg.type = uint8_t(MainCommand::PC_STATUS_UPDATE);
     msg.pc_status = status;
-    if (message_queue_ != nullptr) {
-        if (xQueueSend(message_queue_, &msg, 0) != pdPASS) {
+    if (message_queue_ != nullptr)
+    {
+        if (xQueueSend(message_queue_, &msg, 0) != pdPASS)
+        {
             LOG_WARNING("Display", "Drop PC_STATUS_UPDATE: display queue full");
         }
     }
 }
 
-void MainTask::SendDisplaySetting(const DeviceSettings& setting) {
+void MainTask::SendDisplaySetting(const DeviceSettings &setting)
+{
     DisplayMessage msg{};
     msg.type = uint8_t(MainCommand::SETTING_UPDATE);
     msg.setting.work_mode = setting.work_mode;
@@ -2410,18 +2863,22 @@ void MainTask::SendDisplaySetting(const DeviceSettings& setting) {
     msg.setting.active_keymap_profile = setting.active_keymap_profile;
     snprintf(msg.setting.rgb_single_color, sizeof(msg.setting.rgb_single_color), "%s", setting.rgb_single_colar.c_str());
     // 发送消息到显示任务
-    if(message_queue_ != nullptr) {
-        if (xQueueSend(message_queue_, &msg, 0) != pdPASS) {
+    if (message_queue_ != nullptr)
+    {
+        if (xQueueSend(message_queue_, &msg, 0) != pdPASS)
+        {
             LOG_WARNING("Display", "Drop SETTING_UPDATE: display queue full");
         }
     }
 }
 
-bool MainTask::consumeUiSettingsRequest(ui_settings_snapshot_t& snapshot, bool& persist) {
+bool MainTask::consumeUiSettingsRequest(ui_settings_snapshot_t &snapshot, bool &persist)
+{
     bool hasPending = false;
 
     taskENTER_CRITICAL(&g_ui_settings_lock);
-    if (g_ui_settings_request.pending) {
+    if (g_ui_settings_request.pending)
+    {
         snapshot = g_ui_settings_request.snapshot;
         persist = g_ui_settings_request.persist;
         g_ui_settings_request.pending = false;
@@ -2433,15 +2890,16 @@ bool MainTask::consumeUiSettingsRequest(ui_settings_snapshot_t& snapshot, bool& 
     return hasPending;
 }
 
-void MainTask::applyUiSettingsSnapshot(const ui_settings_snapshot_t& requested, bool persist) {
+void MainTask::applyUiSettingsSnapshot(const ui_settings_snapshot_t &requested, bool persist)
+{
     ui_settings_snapshot_t snapshot = requested;
     bool settingChanged = false;
     bool voiceConfigChanged = false;
     bool keymapProfileChanged = false;
     bool powerModeChanged = false;
     const uint8_t requestedProfile = requested.active_keymap_profile >= CONFIG_PROFILE_COUNT
-        ? 0
-        : requested.active_keymap_profile;
+                                         ? 0
+                                         : requested.active_keymap_profile;
     const bool shouldSwitchProfile = requestedProfile != configuration_.settings_.active_keymap_profile;
 
     snapshot.work_mode = constrain(snapshot.work_mode,
@@ -2463,55 +2921,70 @@ void MainTask::applyUiSettingsSnapshot(const ui_settings_snapshot_t& requested, 
     snapshot.active_keymap_profile = requestedProfile;
     snapshot.rgb_single_color[sizeof(snapshot.rgb_single_color) - 1] = '\0';
 
-    if (xSemaphoreTake(configuration_.mutex_, portMAX_DELAY) == pdTRUE) {
-        if (configuration_.settings_.work_mode != snapshot.work_mode) {
+    if (xSemaphoreTake(configuration_.mutex_, portMAX_DELAY) == pdTRUE)
+    {
+        if (configuration_.settings_.work_mode != snapshot.work_mode)
+        {
             setWorkMode(static_cast<Configuration::WORK_MODE>(snapshot.work_mode));
             configuration_.settings_.work_mode = snapshot.work_mode;
             settingChanged = true;
         }
-        if (configuration_.settings_.rgb_mode != snapshot.rgb_mode) {
+        if (configuration_.settings_.rgb_mode != snapshot.rgb_mode)
+        {
             configuration_.settings_.rgb_mode = snapshot.rgb_mode;
             settingChanged = true;
         }
-        if (configuration_.settings_.rgb_click_mode != snapshot.rgb_click_mode) {
+        if (configuration_.settings_.rgb_click_mode != snapshot.rgb_click_mode)
+        {
             configuration_.settings_.rgb_click_mode = snapshot.rgb_click_mode;
             settingChanged = true;
         }
-        if (!configuration_.settings_.rgb_single_colar.equals(snapshot.rgb_single_color)) {
+        if (!configuration_.settings_.rgb_single_colar.equals(snapshot.rgb_single_color))
+        {
             configuration_.settings_.rgb_single_colar = snapshot.rgb_single_color;
             settingChanged = true;
         }
-        if (configuration_.settings_.rgb_brightness != snapshot.rgb_brightness) {
+        if (configuration_.settings_.rgb_brightness != snapshot.rgb_brightness)
+        {
             configuration_.settings_.rgb_brightness = snapshot.rgb_brightness;
             settingChanged = true;
         }
-        if (configuration_.settings_.tft_theme != snapshot.tft_theme) {
+        if (configuration_.settings_.tft_theme != snapshot.tft_theme)
+        {
             configuration_.settings_.tft_theme = snapshot.tft_theme;
             settingChanged = true;
         }
-        if (configuration_.settings_.tft_brightness != snapshot.tft_brightness) {
+        if (configuration_.settings_.tft_brightness != snapshot.tft_brightness)
+        {
             configuration_.settings_.tft_brightness = snapshot.tft_brightness;
             settingChanged = true;
         }
-        if (configuration_.settings_.device_volume != snapshot.device_volume) {
+        if (configuration_.settings_.device_volume != snapshot.device_volume)
+        {
             configuration_.settings_.device_volume = snapshot.device_volume;
             settingChanged = true;
         }
-        if (configuration_.settings_.power_mode != snapshot.power_mode) {
+        if (configuration_.settings_.power_mode != snapshot.power_mode)
+        {
             configuration_.settings_.power_mode = snapshot.power_mode;
             settingChanged = true;
             powerModeChanged = true;
         }
-        if (configuration_.settings_.connect_host != snapshot.connect_host) {
+        if (configuration_.settings_.connect_host != snapshot.connect_host)
+        {
             configuration_.settings_.connect_host = snapshot.connect_host;
             settingChanged = true;
-            if (!snapshot.connect_host) {
+            if (!snapshot.connect_host)
+            {
                 protocol_.disableTcpClient();
-            } else if (WiFi.status() == WL_CONNECTED) {
+            }
+            else if (WiFi.status() == WL_CONNECTED)
+            {
                 updateProtocolTcpEndpoint();
             }
         }
-        if (configuration_.settings_.voice_enable != snapshot.voice_enable) {
+        if (configuration_.settings_.voice_enable != snapshot.voice_enable)
+        {
             configuration_.settings_.voice_enable = snapshot.voice_enable;
             settingChanged = true;
             voiceConfigChanged = true;
@@ -2519,57 +2992,73 @@ void MainTask::applyUiSettingsSnapshot(const ui_settings_snapshot_t& requested, 
         xSemaphoreGive(configuration_.mutex_);
     }
 
-    if (powerModeChanged) {
+    if (powerModeChanged)
+    {
         applyPowerMode(static_cast<Configuration::POWER_MODE>(configuration_.settings_.power_mode));
     }
 
-    if (shouldSwitchProfile && configuration_.switchActiveProfile(requestedProfile)) {
+    if (shouldSwitchProfile && configuration_.switchActiveProfile(requestedProfile))
+    {
         settingChanged = true;
         voiceConfigChanged = true;
         keymapProfileChanged = true;
     }
 
-    if (voiceConfigChanged) {
+    if (voiceConfigChanged)
+    {
         applyVoiceConfig();
     }
-    if (settingChanged || voiceConfigChanged) {
+    if (settingChanged || voiceConfigChanged)
+    {
         reconcileVoiceRuntimeState();
         speaker_.SetVolume(configuration_.settings_.device_volume / 5);
         SendDisplaySetting(configuration_.settings_);
         SendMusicPlayerUpdate(true);
         SendHaStatusSnapshot();
-        if (persist) {
+        if (persist)
+        {
             configuration_.SaveSetting();
             sendCurrentConfigSnapshot(0);
         }
-    } else if (persist) {
+    }
+    else if (persist)
+    {
         configuration_.SaveSetting();
         sendCurrentConfigSnapshot(0);
     }
-    if (keymapProfileChanged) {
+    if (keymapProfileChanged)
+    {
         SendKeyMappedProfileUi();
         sendCurrentProfileState(0);
         sendCurrentKeymapSnapshot(0);
     }
 }
 
-void MainTask::SendModuleStatus(MODULESTATUS status) {
+#if ENABLE_EXTENSION_MODULES
+void MainTask::SendModuleStatus(MODULESTATUS status)
+{
     DisplayMessage msg;
     msg.type = uint8_t(MainCommand::MODULE_STATUS);
     msg.module = status;
     // 发送消息到显示任务
-    if(message_queue_ != nullptr) {
+    if (message_queue_ != nullptr)
+    {
         xQueueSend(message_queue_, &msg, portMAX_DELAY);
     }
     SendHaStatusSnapshot();
 }
 
-void MainTask::SendHaStatusUpdate(const HaStatusInfo& status) {
+#endif
+
+void MainTask::SendHaStatusUpdate(const HaStatusInfo &status)
+{
     DisplayMessage msg;
     msg.type = uint8_t(MainCommand::HA_STATUS_UPDATE);
     msg.ha_status = status;
-    if (message_queue_ != nullptr) {
-        if (xQueueSend(message_queue_, &msg, 0) != pdPASS) {
+    if (message_queue_ != nullptr)
+    {
+        if (xQueueSend(message_queue_, &msg, 0) != pdPASS)
+        {
             LOG_WARNING("Display", "Drop HA_STATUS_UPDATE: display queue full");
         }
     }
@@ -2590,7 +3079,8 @@ void MainTask::SendHaStatusUpdate(const HaStatusInfo& status) {
     protocol_.sendCustomCommand(CMD_HA_STATUS, 0, statusDoc.as<JsonObject>());
 }
 
-void MainTask::SendHaStatusSnapshot() {
+void MainTask::SendHaStatusSnapshot()
+{
     HaStatusInfo status;
     status.wifi_enabled = configuration_.settings_.wifi_switch;
     status.wifi_connected = WiFi.status() == WL_CONNECTED;
@@ -2599,14 +3089,20 @@ void MainTask::SendHaStatusSnapshot() {
     status.work_mode = currentWorkMode_;
     status.voice_enabled = configuration_.settings_.voice_enable;
     status.voice_recording = voiceCaptureActive_;
+#if ENABLE_EXTENSION_MODULES
     status.module_a_connected = status_modA_.status;
     status.module_b_connected = status_modB_.status;
+#else
+    status.module_a_connected = false;
+    status.module_b_connected = false;
+#endif
 
     const String ipAddress = status.wifi_connected ? WiFi.localIP().toString() : String("--");
     snprintf(status.ip_address, sizeof(status.ip_address), "%s", ipAddress.c_str());
 
     String endpoint = "OFFLINE";
-    if (status.wifi_connected) {
+    if (status.wifi_connected)
+    {
         endpoint = WiFi.gatewayIP().toString() + String(":30000");
     }
     snprintf(status.server_endpoint, sizeof(status.server_endpoint), "%s", endpoint.c_str());
@@ -2620,7 +3116,7 @@ void MainTask::SendHaStatusSnapshot() {
 //     msg.type = uint8_t(MainCommand::SPECTRUM_DISPLAY);
 //     memcpy(msg.spectrumBands, bands, sizeof(float) * numBands);
 //     msg.numBands = numBands;
-    
+
 //     if (message_queue_ != nullptr) {
 //         xQueueSend(message_queue_, &msg, portMAX_DELAY);
 //     }
@@ -2631,7 +3127,7 @@ void MainTask::SendHaStatusSnapshot() {
 //     msg.workMode = currentWorkMode_;
 //     //msg.batteryVoltage = readBatteryVoltage();
 //     //msg.isConnected = checkConnectionStatus();
-    
+
 //     // 发送消息到显示任务
 //     if(message_queue_ != nullptr) {
 //         xQueueSend(message_queue_, &msg, portMAX_DELAY);

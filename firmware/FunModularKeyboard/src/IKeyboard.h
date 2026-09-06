@@ -1,7 +1,8 @@
 #pragma once
 #include <Arduino.h>
 
-class IKeyboard {
+class IKeyboard
+{
 public:
     virtual ~IKeyboard() = default;
     virtual bool begin() = 0;

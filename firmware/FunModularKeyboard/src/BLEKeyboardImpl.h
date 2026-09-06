@@ -4,11 +4,12 @@
 
 class BleKeyboard;
 
-class BLEKeyboardImpl : public IKeyboard {
+class BLEKeyboardImpl : public IKeyboard
+{
 public:
     BLEKeyboardImpl();
     ~BLEKeyboardImpl() override = default;
-    
+
     bool begin() override;
     void press(uint8_t key) override;
     void press(String key) override;

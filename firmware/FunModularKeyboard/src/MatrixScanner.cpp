@@ -1,6 +1,6 @@
 #include "MatrixScanner.h"
 
-// // MatrixScanner::MatrixScanner(const uint8_t* row_pins, const uint8_t* col_pins, uint8_t rows, uint8_t cols) 
+// // MatrixScanner::MatrixScanner(const uint8_t* row_pins, const uint8_t* col_pins, uint8_t rows, uint8_t cols)
 // //     : row_pins_(row_pins), col_pins_(col_pins), _rows(rows), _cols(cols) {
 // MatrixScanner::MatrixScanner() {
 //     row_pins_ = row_pins;
@@ -83,32 +83,30 @@
 //     return changes;
 // }
 
-
-//MatrixScanner::~MatrixScanner() {}
-
-
-
-
-
+// MatrixScanner::~MatrixScanner() {}
 
 #include "MatrixScanner.h"
 
-MatrixScanner::MatrixScanner() 
-    : row_pins_(row_pins), col_pins_(col_pins) {
-    
+MatrixScanner::MatrixScanner()
+    : row_pins_(row_pins), col_pins_(col_pins)
+{
+
     // 初始化行引脚(输出)
-    for (int r = 0; r < PHYSICAL_KEY_ROW; r++) {
+    for (int r = 0; r < PHYSICAL_KEY_ROW; r++)
+    {
         pinMode(row_pins_[r], OUTPUT);
         digitalWrite(row_pins_[r], HIGH);
     }
-    
+
     // 初始化列引脚(输入带上拉)
-    for (int c = 0; c < PHYSICAL_KEY_COL; c++) {
+    for (int c = 0; c < PHYSICAL_KEY_COL; c++)
+    {
         pinMode(col_pins_[c], INPUT_PULLUP);
     }
-    
+
     // 初始化所有按键状态
-    for (auto& key : key_states_) {
+    for (auto &key : key_states_)
+    {
         key.state = KeyState::IDLE;
         key.timer = 0;
     }
@@ -116,93 +114,111 @@ MatrixScanner::MatrixScanner()
 
 MatrixScanner::~MatrixScanner() {}
 
-uint32_t MatrixScanner::scan() {
+uint32_t MatrixScanner::scan()
+{
     unsigned long current_time = millis();
     int key_index = 0;
-    
+
     // 1. 扫描矩阵获取当前状态
-    for (int r = 0; r < PHYSICAL_KEY_ROW; r++) {
+    for (int r = 0; r < PHYSICAL_KEY_ROW; r++)
+    {
         digitalWrite(row_pins_[r], LOW);
         delayMicroseconds(10); // 稳定信号
-        
-        for (int c = 0; c < PHYSICAL_KEY_COL; c++) {
+
+        for (int c = 0; c < PHYSICAL_KEY_COL; c++)
+        {
             // int key_index = r * PHYSICAL_KEY_COL + c;
-            //去除掉未使用的按键位置
+            // 去除掉未使用的按键位置
             int phy_key_index = (r * PHYSICAL_KEY_COL + c);
             if ((phy_key_index == 2) || (phy_key_index == 3) ||
-                (phy_key_index == 4) || (phy_key_index == 15)) {
-                   continue;
+                (phy_key_index == 4) || (phy_key_index == 15))
+            {
+                continue;
             }
 
             bool pressed = (digitalRead(col_pins_[c]) == LOW);
-            //LOG_DEBUG("Log","key_index=%d, pressed = %d",key_index, pressed);
-            // 2. 处理每个按键的状态机
-            KeyState& key = key_states_[key_index];
-            
-            //LOG_DEBUG("Log","key.state = %d", key.state);
-            switch (key.state) {
-                case KeyState::IDLE:
-                    if (pressed) {
-                        key.state = KeyState::DEBOUNCE_PRESS;
-                        key.timer = current_time;
+            // LOG_DEBUG("Log","key_index=%d, pressed = %d",key_index, pressed);
+            //  2. 处理每个按键的状态机
+            KeyState &key = key_states_[key_index];
+
+            // LOG_DEBUG("Log","key.state = %d", key.state);
+            switch (key.state)
+            {
+            case KeyState::IDLE:
+                if (pressed)
+                {
+                    key.state = KeyState::DEBOUNCE_PRESS;
+                    key.timer = current_time;
+                }
+                break;
+
+            case KeyState::DEBOUNCE_PRESS:
+                if ((long)(current_time - key.timer) >= DEBOUNCE_TIME_MS)
+                {
+                    if (pressed)
+                    {
+                        key.state = KeyState::PRESSED;
+                        stable_state_ |= (1 << key_index); // 标记为稳定按下
+                        pressed_keys_ |= (1 << key_index); // 记录按下事件
                     }
-                    break;
-                    
-                case KeyState::DEBOUNCE_PRESS:
-                    if ((long)(current_time - key.timer) >= DEBOUNCE_TIME_MS) {
-                        if (pressed) {
-                            key.state = KeyState::PRESSED;
-                            stable_state_ |= (1 << key_index); // 标记为稳定按下
-                            pressed_keys_ |= (1 << key_index);  // 记录按下事件
-                        } else {
-                            key.state = KeyState::IDLE; // 抖动，返回空闲
-                        }
+                    else
+                    {
+                        key.state = KeyState::IDLE; // 抖动，返回空闲
                     }
-                    break;
-                    
-                case KeyState::PRESSED:
-                    if (!pressed) {
-                        key.state = KeyState::DEBOUNCE_RELEASE;
-                        key.timer = current_time;
+                }
+                break;
+
+            case KeyState::PRESSED:
+                if (!pressed)
+                {
+                    key.state = KeyState::DEBOUNCE_RELEASE;
+                    key.timer = current_time;
+                }
+                break;
+
+            case KeyState::DEBOUNCE_RELEASE:
+                if ((long)(current_time - key.timer) >= DEBOUNCE_TIME_MS)
+                {
+                    if (!pressed)
+                    {
+                        key.state = KeyState::IDLE;
+                        stable_state_ &= ~(1 << key_index); // 清除按下状态
+                        released_keys_ |= (1 << key_index); // 记录释放事件
                     }
-                    break;
-                    
-                case KeyState::DEBOUNCE_RELEASE:
-                    if ((long)(current_time - key.timer) >= DEBOUNCE_TIME_MS) {
-                        if (!pressed) {
-                            key.state = KeyState::IDLE;
-                            stable_state_ &= ~(1 << key_index); // 清除按下状态
-                            released_keys_ |= (1 << key_index); // 记录释放事件
-                        } else {
-                            key.state = KeyState::PRESSED; // 抖动，返回按下状态
-                        }
+                    else
+                    {
+                        key.state = KeyState::PRESSED; // 抖动，返回按下状态
                     }
-                    break;
+                }
+                break;
             }
             key_index++;
         }
-        
+
         digitalWrite(row_pins_[r], HIGH);
         delayMicroseconds(1); // 防止信号串扰
     }
-    
-     //LOG_DEBUG("Log","pressed_keys_ = %x,released_keys_ = %x", pressed_keys_, released_keys_);
+
+    // LOG_DEBUG("Log","pressed_keys_ = %x,released_keys_ = %x", pressed_keys_, released_keys_);
 
     // 3. 返回变化的状态位
     uint32_t changes = (pressed_keys_ | released_keys_);
-    pressed_keys_ = 0;  // 清除临时状态
+    pressed_keys_ = 0; // 清除临时状态
     released_keys_ = 0;
     return changes;
 }
 
-uint32_t MatrixScanner::getStableState() {
+uint32_t MatrixScanner::getStableState()
+{
     return stable_state_;
 }
 
-uint32_t MatrixScanner::getPressedKeys() {
+uint32_t MatrixScanner::getPressedKeys()
+{
     return pressed_keys_;
 }
 
-uint32_t MatrixScanner::getReleasedKeys() {
+uint32_t MatrixScanner::getReleasedKeys()
+{
     return released_keys_;
 }

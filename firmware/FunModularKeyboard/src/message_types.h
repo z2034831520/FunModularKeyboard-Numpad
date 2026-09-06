@@ -5,7 +5,8 @@
 #include "Mic.h"
 #include "ui/ui_settings_types.h"
 
-struct PcStatusInfo {
+struct PcStatusInfo
+{
     uint32_t mask{0};
     bool caps_lock{false};
     bool num_lock{false};
@@ -21,7 +22,8 @@ struct PcStatusInfo {
     float network_down_kbps{-1.0f};
 };
 
-struct HaStatusInfo {
+struct HaStatusInfo
+{
     bool wifi_enabled{false};
     bool wifi_connected{false};
     int wifi_rssi{-100};
@@ -35,7 +37,8 @@ struct HaStatusInfo {
     char server_endpoint[32]{0};
 };
 
-struct MusicPlayerInfo {
+struct MusicPlayerInfo
+{
     bool connected{false};
     bool is_playing{false};
     bool is_paused{false};
@@ -51,10 +54,11 @@ struct MusicPlayerInfo {
 };
 
 // 定义显示任务需要的数据结构
-struct DisplayMessage {
+struct DisplayMessage
+{
     uint8_t type;
     uint8_t action;
-    uint32_t key_value;//所有按下按键状态值
+    uint32_t key_value; // 所有按下按键状态值
     uint8_t active_profile{0};
     bool asr_recording{false};
     PcStatusInfo pc_status;
@@ -77,11 +81,12 @@ struct DisplayMessage {
 };
 
 // 定义主任务可能需要接收的消息类型
-enum class MainCommand {
+enum class MainCommand
+{
     ACTION_INPUT = 1,
     KEY_INPUT,
     SETTING_UPDATE,
-    //SPECTRUM_DISPLAY,
+    // SPECTRUM_DISPLAY,
     SYSTEM_RESET,
     MODULE_STATUS,
     ASR_RECORDING_STATE,

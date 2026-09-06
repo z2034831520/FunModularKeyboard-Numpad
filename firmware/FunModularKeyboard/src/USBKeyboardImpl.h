@@ -9,11 +9,12 @@
 class USBHIDKeyboard;
 class USBHIDConsumerControl;
 
-class USBKeyboardImpl : public IKeyboard {
+class USBKeyboardImpl : public IKeyboard
+{
 public:
     USBKeyboardImpl();
     ~USBKeyboardImpl() override = default;
-    
+
     bool begin() override;
     void press(uint8_t key) override;
     void press(String key) override;
@@ -22,6 +23,7 @@ public:
     void releaseAll() override;
     bool isConnected() override;
     void send() override;
+
 private:
     std::unique_ptr<USBHIDKeyboard> keyboard_;
     std::unique_ptr<USBHIDConsumerControl> keyboard_meida_;

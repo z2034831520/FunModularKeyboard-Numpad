@@ -3,7 +3,7 @@
 
 #include <lvgl.h>
 
-#define DISP_BUF_SIZE (428*142/ 10) // 调整缓冲区大小
+#define DISP_BUF_SIZE (428 * 142 / 10) // 调整缓冲区大小
 
 void lvgl_setup();
 void lvgl_set_backlight_brightness(uint8_t brightness_percent);

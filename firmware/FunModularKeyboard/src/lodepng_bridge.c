@@ -6,17 +6,17 @@
 
 #define LODEPNG_NO_COMPILE_ALLOCATORS
 
-void* lodepng_malloc(size_t size)
+void *lodepng_malloc(size_t size)
 {
 	return malloc(size);
 }
 
-void* lodepng_realloc(void* ptr, size_t new_size)
+void *lodepng_realloc(void *ptr, size_t new_size)
 {
 	return realloc(ptr, new_size);
 }
 
-void lodepng_free(void* ptr)
+void lodepng_free(void *ptr)
 {
 	free(ptr);
 }

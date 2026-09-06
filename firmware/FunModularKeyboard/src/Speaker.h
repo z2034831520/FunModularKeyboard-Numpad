@@ -3,16 +3,17 @@
 #include "Audio.h"
 #include "LogManager.h"
 
-//MAX98357
+// MAX98357
 
 #define I2S_BCLK 16
 #define I2S_LRC 39
 #define I2S_DOUT 38
 
-class Speaker {
+class Speaker
+{
 public:
     Speaker();
-    ~Speaker();   
+    ~Speaker();
 
     void SetVolume(uint8_t vol);
     void PlayRemoteAudio(String path);
@@ -23,8 +24,7 @@ public:
     uint32_t GetCurrentTime();
     uint32_t GetTotalPlayingTime();
     void Loop();
-  
+
 private:
-    Audio _audio{false,3, I2S_NUM_1};
-   
+    Audio _audio{false, 3, I2S_NUM_1};
 };

@@ -2,8 +2,8 @@
 #include <Arduino.h>
 #include <map>
 #include <string>
-#include <memory>  // 添加智能指针头文件
-//#include <BleKeyboard.h>
+#include <memory> // 添加智能指针头文件
+// #include <BleKeyboard.h>
 #include "MatrixScanner.h"
 #include "configuration.h"
 #include "task.h"
@@ -29,10 +29,12 @@
 #define MODB_I2C_SLAVE_ADDR 0x08
 #endif
 
-class MainTask : public Task<MainTask> {
+class MainTask : public Task<MainTask>
+{
     friend class Task<MainTask>;
+
 public:
-    MainTask(const uint8_t task_core, Configuration& configuration);
+    MainTask(const uint8_t task_core, Configuration &configuration);
     ~MainTask();
 
     // press()函数中输入的值会做处理，输入的不是实际的HID Usage ID，
@@ -41,83 +43,165 @@ public:
 
     std::map<std::string, uint8_t> keyMapTable = {
         // === 字母键 (使用ASCII字符) ===
-        {"a", 'a'}, {"b", 'b'}, {"c", 'c'}, {"d", 'd'}, {"e", 'e'}, {"f", 'f'},
-        {"g", 'g'}, {"h", 'h'}, {"i", 'i'}, {"j", 'j'}, {"k", 'k'}, {"l", 'l'},
-        {"m", 'm'}, {"n", 'n'}, {"o", 'o'}, {"p", 'p'}, {"q", 'q'}, {"r", 'r'},
-        {"s", 's'}, {"t", 't'}, {"u", 'u'}, {"v", 'v'}, {"w", 'w'}, {"x", 'x'},
-        {"y", 'y'}, {"z", 'z'},
-        
+        {"a", 'a'},
+        {"b", 'b'},
+        {"c", 'c'},
+        {"d", 'd'},
+        {"e", 'e'},
+        {"f", 'f'},
+        {"g", 'g'},
+        {"h", 'h'},
+        {"i", 'i'},
+        {"j", 'j'},
+        {"k", 'k'},
+        {"l", 'l'},
+        {"m", 'm'},
+        {"n", 'n'},
+        {"o", 'o'},
+        {"p", 'p'},
+        {"q", 'q'},
+        {"r", 'r'},
+        {"s", 's'},
+        {"t", 't'},
+        {"u", 'u'},
+        {"v", 'v'},
+        {"w", 'w'},
+        {"x", 'x'},
+        {"y", 'y'},
+        {"z", 'z'},
+
         // === 大写字母键 (使用ASCII字符，库会自动处理Shift) ===
-        {"A", 'A'}, {"B", 'B'}, {"C", 'C'}, {"D", 'D'}, {"E", 'E'}, {"F", 'F'},
-        {"G", 'G'}, {"H", 'H'}, {"I", 'I'}, {"J", 'J'}, {"K", 'K'}, {"L", 'L'},
-        {"M", 'M'}, {"N", 'N'}, {"O", 'O'}, {"P", 'P'}, {"Q", 'Q'}, {"R", 'R'},
-        {"S", 'S'}, {"T", 'T'}, {"U", 'U'}, {"V", 'V'}, {"W", 'W'}, {"X", 'X'},
-        {"Y", 'Y'}, {"Z", 'Z'},
-        
+        {"A", 'A'},
+        {"B", 'B'},
+        {"C", 'C'},
+        {"D", 'D'},
+        {"E", 'E'},
+        {"F", 'F'},
+        {"G", 'G'},
+        {"H", 'H'},
+        {"I", 'I'},
+        {"J", 'J'},
+        {"K", 'K'},
+        {"L", 'L'},
+        {"M", 'M'},
+        {"N", 'N'},
+        {"O", 'O'},
+        {"P", 'P'},
+        {"Q", 'Q'},
+        {"R", 'R'},
+        {"S", 'S'},
+        {"T", 'T'},
+        {"U", 'U'},
+        {"V", 'V'},
+        {"W", 'W'},
+        {"X", 'X'},
+        {"Y", 'Y'},
+        {"Z", 'Z'},
+
         // === 数字键 (使用ASCII字符) ===
-        {"NUM_0", '0'}, {"NUM_1", '1'}, {"NUM_2", '2'}, {"NUM_3", '3'}, {"NUM_4", '4'}, 
-        {"NUM_5", '5'}, {"NUM_6", '6'}, {"NUM_7", '7'}, {"NUM_8", '8'}, {"NUM_9", '9'},
-        
+        {"NUM_0", '0'},
+        {"NUM_1", '1'},
+        {"NUM_2", '2'},
+        {"NUM_3", '3'},
+        {"NUM_4", '4'},
+        {"NUM_5", '5'},
+        {"NUM_6", '6'},
+        {"NUM_7", '7'},
+        {"NUM_8", '8'},
+        {"NUM_9", '9'},
+
         // === 符号键 (使用ASCII字符) ===
-        {"Space", ' '},           // 空格
-        {",", ','}, {".", '.'}, {";", ';'}, {"'", '\''},
-        {"[", '['}, {"]", ']'}, {"\\", '\\'}, {"/", '/'},
-        {"-", '-'}, {"=", '='}, {"`", '`'},
-        
+        {"Space", ' '}, // 空格
+        {",", ','},
+        {".", '.'},
+        {";", ';'},
+        {"'", '\''},
+        {"[", '['},
+        {"]", ']'},
+        {"\\", '\\'},
+        {"/", '/'},
+        {"-", '-'},
+        {"=", '='},
+        {"`", '`'},
+
         // === 控制字符 (使用ASCII码) ===
-        {"Enter", 0xB0},        // 回车
-        {"Backspace", 0xB2},     // 退格
-        {"Tab", 0xB3},           // Tab
-        {"Esc", 0xB1},          // ESC
+        {"Enter", 0xB0},     // 回车
+        {"Backspace", 0xB2}, // 退格
+        {"Tab", 0xB3},       // Tab
+        {"Esc", 0xB1},       // ESC
 
         // === 功能键 (需要使用库常量) ===KEY_F1~KEY_F12
-        {"F1", 0xC2}, {"F2", 0xC3}, {"F3", 0xC4}, {"F4", 0xC5},
-        {"F5", 0xC6}, {"F6", 0xC7}, {"F7", 0xC8}, {"F8", 0xC9},
-        {"F9", 0xCA}, {"F10", 0xCB}, {"F11", 0xCC}, {"F12", 0xCD},
+        {"F1", 0xC2},
+        {"F2", 0xC3},
+        {"F3", 0xC4},
+        {"F4", 0xC5},
+        {"F5", 0xC6},
+        {"F6", 0xC7},
+        {"F7", 0xC8},
+        {"F8", 0xC9},
+        {"F9", 0xCA},
+        {"F10", 0xCB},
+        {"F11", 0xCC},
+        {"F12", 0xCD},
 
         // === 方向键 (需要使用库常量) ===
-        {"Up", 0xDA},         // KEY_UP_ARROW
-        {"Down", 0xD9},       // KEY_DOWN_ARROW  
-        {"Left", 0xD8},       // KEY_LEFT_ARROW
-        {"Right", 0xD7},      // KEY_RIGHT_ARROW
-        
+        {"Up", 0xDA},    // KEY_UP_ARROW
+        {"Down", 0xD9},  // KEY_DOWN_ARROW
+        {"Left", 0xD8},  // KEY_LEFT_ARROW
+        {"Right", 0xD7}, // KEY_RIGHT_ARROW
+
         // === 编辑键 (需要使用库常量) ===
-        {"Insert", 0xD1},     // KEY_INSERT
-        {"Delete", 0xD4},     // KEY_DELETE 
-        {"Home", 0xD2},       // KEY_HOME
-        {"End", 0xD5},        // KEY_END
-        {"PageUp", 0xD3},     // KEY_PAGE_UP
-        {"PageDown", 0xD6},   // KEY_PAGE_DOWN
-        
+        {"Insert", 0xD1},   // KEY_INSERT
+        {"Delete", 0xD4},   // KEY_DELETE
+        {"Home", 0xD2},     // KEY_HOME
+        {"End", 0xD5},      // KEY_END
+        {"PageUp", 0xD3},   // KEY_PAGE_UP
+        {"PageDown", 0xD6}, // KEY_PAGE_DOWN
+
         // === 锁定键 (需要使用库常量) ===
         {"CapsLock", 0xC1},   // KEY_CAPS_LOCK
         {"NumLock", 0xDB},    // 注意：这个可能需要验证
         {"ScrollLock", 0xCF}, // KEY_SCROLL_LOCK
-        
+
         // === 其他键 ===
         {"PrintScreen", 0xCE}, // KEY_PRINT_SCREEN
         {"Pause", 0xD0},       // KEY_PAUSE
         {"Menu", 0xED},        // KEY_MENU
-        
+
         // === 修饰键 (使用库的修饰键常量) ===
-        {"Ctrl", 0x80}, {"Control", 0x80},
-        {"Shift", 0x81}, 
+        {"Ctrl", 0x80},
+        {"Control", 0x80},
+        {"Shift", 0x81},
         {"Alt", 0x82},
-        {"Win", 0x83}, {"Windows", 0x83}, {"Gui", 0x83},
-        
+        {"Win", 0x83},
+        {"Windows", 0x83},
+        {"Gui", 0x83},
+
         // 左右修饰键 - 如果需要区分左右，使用正确的库常量
-        {"LCtrl", 0x80}, {"LControl", 0x80}, {"LeftCtrl", 0x80},
-        {"RCtrl", 0x84}, {"RControl", 0x84}, {"RightCtrl", 0x84},
-        {"LShift", 0x81}, {"LeftShift", 0x81},
-        {"RShift", 0x85}, {"RightShift", 0x85},
-        {"LAlt", 0x82}, {"LeftAlt", 0x82},
-        {"RAlt", 0x86}, {"RightAlt", 0x86},
-        {"LWin", 0x83}, {"LeftWin", 0x83}, {"LeftWindows", 0x83},
-        {"RWin", 0x87}, {"RightWin", 0x87}, {"RightWindows", 0x87}
-    };
+        {"LCtrl", 0x80},
+        {"LControl", 0x80},
+        {"LeftCtrl", 0x80},
+        {"RCtrl", 0x84},
+        {"RControl", 0x84},
+        {"RightCtrl", 0x84},
+        {"LShift", 0x81},
+        {"LeftShift", 0x81},
+        {"RShift", 0x85},
+        {"RightShift", 0x85},
+        {"LAlt", 0x82},
+        {"LeftAlt", 0x82},
+        {"RAlt", 0x86},
+        {"RightAlt", 0x86},
+        {"LWin", 0x83},
+        {"LeftWin", 0x83},
+        {"LeftWindows", 0x83},
+        {"RWin", 0x87},
+        {"RightWin", 0x87},
+        {"RightWindows", 0x87}};
 
 #if ENABLE_EXTENSION_MODULES
-    typedef struct ModAData {
+    typedef struct ModAData
+    {
         // Slider1:[0][1000][50],
         // Slider2:[0][1000][150],
         // Knob1:[0][0],
@@ -130,13 +214,13 @@ public:
         uint32_t slider2_range_min;
         uint32_t slider2_range_max;
         uint32_t slider2_value;
-        uint8_t knob1_status;//0:idle,1:left,2:right     
-        uint8_t knob1_press;//0:idle,1:press    
-        uint8_t knob2_status;//0:idle,1:left,2:right     
-        uint8_t knob2_press;//0:idle,1:press   
-        uint8_t knob3_status;//0:idle,1:left,2:right     
-        uint8_t knob3_press;//0:idle松开且稳定,1:DEBOUNCE_PRESS刚按下，等待消抖,2:PRESSED已确认按下,3:DEBOUNCE_RELEASE松开检测，等待消抖
-        uint8_t index;           
+        uint8_t knob1_status; // 0:idle,1:left,2:right
+        uint8_t knob1_press;  // 0:idle,1:press
+        uint8_t knob2_status; // 0:idle,1:left,2:right
+        uint8_t knob2_press;  // 0:idle,1:press
+        uint8_t knob3_status; // 0:idle,1:left,2:right
+        uint8_t knob3_press;  // 0:idle松开且稳定,1:DEBOUNCE_PRESS刚按下，等待消抖,2:PRESSED已确认按下,3:DEBOUNCE_RELEASE松开检测，等待消抖
+        uint8_t index;
     } ModAData;
 #endif
 
@@ -160,38 +244,46 @@ public:
     // };
 
     // 设置消息队列
-    void setMessageQueue(QueueHandle_t queue) {
+    void setMessageQueue(QueueHandle_t queue)
+    {
         message_queue_ = queue;
     }
 
     // 转换函数
-    uint8_t stringToKeycode(const std::string& keyStr) {
+    uint8_t stringToKeycode(const std::string &keyStr)
+    {
         auto it = keyMapTable.find(keyStr);
-        if (it != keyMapTable.end()) {
+        if (it != keyMapTable.end())
+        {
             return it->second;
         }
 
-        if (keyStr.empty() || keyStr == "0") {
+        if (keyStr.empty() || keyStr == "0")
+        {
             return 0;
         }
 
-        char* end = nullptr;
+        char *end = nullptr;
         unsigned long value = 0;
 
-        if (keyStr.size() > 2 && keyStr[0] == '0' && (keyStr[1] == 'x' || keyStr[1] == 'X')) {
+        if (keyStr.size() > 2 && keyStr[0] == '0' && (keyStr[1] == 'x' || keyStr[1] == 'X'))
+        {
             value = strtoul(keyStr.c_str() + 2, &end, 16);
-            if (end != nullptr && *end == '\0' && value <= 0xFF) {
+            if (end != nullptr && *end == '\0' && value <= 0xFF)
+            {
                 return static_cast<uint8_t>(value);
             }
         }
 
         value = strtoul(keyStr.c_str(), &end, 16);
-        if (end != nullptr && *end == '\0' && value <= 0xFF) {
+        if (end != nullptr && *end == '\0' && value <= 0xFF)
+        {
             return static_cast<uint8_t>(value);
         }
 
         value = strtoul(keyStr.c_str(), &end, 10);
-        if (end != nullptr && *end == '\0' && value <= 0xFF) {
+        if (end != nullptr && *end == '\0' && value <= 0xFF)
+        {
             return static_cast<uint8_t>(value);
         }
 
@@ -209,21 +301,21 @@ private:
     void applyPowerMode(Configuration::POWER_MODE mode);
     void handleKeyEvent(uint32_t key_value);
     void reportPhysicalKeyEdges(uint32_t edgeMask, bool pressed);
-    bool hasMappedOutput(const KeyMapping& mapping) const;
-    void triggerMappedInput(const KeyMapping& mapping);
-    bool handleSpecialInputEvent(const String& input_id, uint8_t fallbackDisplayAction = 0);
+    bool hasMappedOutput(const KeyMapping &mapping) const;
+    void triggerMappedInput(const KeyMapping &mapping);
+    bool handleSpecialInputEvent(const String &input_id, uint8_t fallbackDisplayAction = 0);
 #if ENABLE_EXTENSION_MODULES
-    void handleModuleKnobInput(const char* left_input_id,
-                               const char* right_input_id,
-                               const char* click_input_id,
+    void handleModuleKnobInput(const char *left_input_id,
+                               const char *right_input_id,
+                               const char *click_input_id,
                                uint8_t status,
                                uint8_t press,
-                               uint8_t& last_status,
-                               uint8_t& last_press);
-    void handleSliderInput(const char* left_input_id,
-                           const char* right_input_id,
-                           int& last_value,
-                           int& accumulated_delta,
+                               uint8_t &last_status,
+                               uint8_t &last_press);
+    void handleSliderInput(const char *left_input_id,
+                           const char *right_input_id,
+                           int &last_value,
+                           int &accumulated_delta,
                            uint32_t current_value,
                            uint32_t range_min,
                            uint32_t range_max);
@@ -234,26 +326,26 @@ private:
     bool isMusicUiActive() const;
     void updateMusicUiAsrOwnership();
     void applyVoiceConfig();
-    bool sendAsciiTextToHost(const String& text);
-    bool sendUtf8TextToCdc(const String& text);
+    bool sendAsciiTextToHost(const String &text);
+    bool sendUtf8TextToCdc(const String &text);
     void SendDisplayAction(uint8_t action);
     void SendDisplayKeyInput(uint32_t key_value);
     void SendAsrRecordingState(bool isRecording);
-    void SendPcStatusUpdate(const PcStatusInfo& status);
-    void SendHaStatusUpdate(const HaStatusInfo& status);
+    void SendPcStatusUpdate(const PcStatusInfo &status);
+    void SendHaStatusUpdate(const HaStatusInfo &status);
     void SendHaStatusSnapshot();
     void SendMusicPlayerUpdate(bool force = false);
     void updateLocalMusicProgress(uint32_t nowMs);
-    void SendMusicControlCommand(const char* action);
-    void SendDisplaySetting(const DeviceSettings& setting);
+    void SendMusicControlCommand(const char *action);
+    void SendDisplaySetting(const DeviceSettings &setting);
     void SendKeyMappedProfileUi();
     void sendCurrentProfileState(int seq = 0);
-    //void SendSpectrumDisplay(float* bands, int numBands);
+    // void SendSpectrumDisplay(float* bands, int numBands);
 #if ENABLE_EXTENSION_MODULES
     void SendModuleStatus(MODULESTATUS status);
 #endif
-    //void sendDisplayUpdate();
-    bool ConnectToWiFi(const String& ssid, const String& password);
+    // void sendDisplayUpdate();
+    bool ConnectToWiFi(const String &ssid, const String &password);
     void scheduleWiFiConnectAttempt(bool immediate = false);
     void stopWiFiReconnect();
     void processWiFiReconnect(uint32_t nowMs);
@@ -262,33 +354,32 @@ private:
     bool SyncTimeFromNTP();
     bool switchKeymapProfile(int delta);
     void reconcileVoiceRuntimeState();
-    bool consumeUiSettingsRequest(ui_settings_snapshot_t& snapshot, bool& persist);
-    void applyUiSettingsSnapshot(const ui_settings_snapshot_t& snapshot, bool persist);
-    String formatKeyMappingDisplay(const KeyMapping& mapping, uint8_t physicalKey) const;
+    bool consumeUiSettingsRequest(ui_settings_snapshot_t &snapshot, bool &persist);
+    void applyUiSettingsSnapshot(const ui_settings_snapshot_t &snapshot, bool persist);
+    String formatKeyMappingDisplay(const KeyMapping &mapping, uint8_t physicalKey) const;
     void sendCurrentKeymapSnapshot(int seq = 0);
     void sendCurrentConfigSnapshot(int seq = 0);
-    bool saveProfileIconFromBase64(uint8_t profileIndex, const String& pngBase64, String& errorMessage);
+    bool saveProfileIconFromBase64(uint8_t profileIndex, const String &pngBase64, String &errorMessage);
     bool removeProfileIcon(uint8_t profileIndex);
     bool profileIconExists(uint8_t profileIndex) const;
 
     int parseKeymapSetCommand(int seq, JsonObject data);
     int parseConfigSetCommand(int seq, JsonObject data);
-    
+
     int parseSingleKeyMapping(JsonObject keyObj);
-    bool parseKeymapSetValue(Configuration::KEY_TYPE key_type, const String& value, KeyMapping& mapping);
-    
+    bool parseKeymapSetValue(Configuration::KEY_TYPE key_type, const String &value, KeyMapping &mapping);
 
     void onCommandReceived(int cmd, int seq, JsonObject data);
     void onKeyEvent(int physicalKey, int logicalKey, bool pressed);
 #if ENABLE_EXTENSION_MODULES
-    bool parseModADataOptimized(const char* input, ModAData& data);
+    bool parseModADataOptimized(const char *input, ModAData &data);
     void handleModData(String data);
 #endif
 
     MatrixScanner scanner_;
     std::unique_ptr<IKeyboard> currentKeyboard_{nullptr};
     Configuration::WORK_MODE currentWorkMode_;
-    Configuration& configuration_;
+    Configuration &configuration_;
     QueueHandle_t message_queue_;
     Speaker speaker_;
     // Mic mic_;

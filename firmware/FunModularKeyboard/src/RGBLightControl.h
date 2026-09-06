@@ -2,15 +2,14 @@
 #include <Arduino.h>
 #include <FastLED.h>
 
-#define LED_VCC_CTRL     36
-#define LED_PIN          6
-#define NUM_LEDS         16
-#define LED_TYPE         WS2812B
-#define COLOR_ORDER      GRB
+#define LED_VCC_CTRL 36
+#define LED_PIN 6
+#define NUM_LEDS 16
+#define LED_TYPE WS2812B
+#define COLOR_ORDER GRB
 
-
-
-class RGBLightControl {
+class RGBLightControl
+{
 public:
     RGBLightControl(uint8_t brightness = 50);
     ~RGBLightControl();

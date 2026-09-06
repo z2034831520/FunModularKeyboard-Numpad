@@ -53,6 +53,12 @@ struct MusicPlayerInfo
     char lyric_next[160]{0};
 };
 
+struct BatteryStatusInfo
+{
+    uint16_t voltage_mv{0};
+    uint8_t percent{0};
+};
+
 // 定义显示任务需要的数据结构
 struct DisplayMessage
 {
@@ -64,6 +70,7 @@ struct DisplayMessage
     PcStatusInfo pc_status;
     HaStatusInfo ha_status;
     MusicPlayerInfo music_player;
+    BatteryStatusInfo battery_status;
     ui_settings_snapshot_t setting;
     MODULESTATUS module;
     char profile_name[24]{0};
@@ -94,4 +101,5 @@ enum class MainCommand
     HA_STATUS_UPDATE,
     MUSIC_PLAYER_UPDATE,
     KEYMAP_PROFILE_UPDATE,
+    BATTERY_STATUS_UPDATE,
 };

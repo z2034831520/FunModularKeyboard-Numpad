@@ -385,7 +385,8 @@ void DisplayTask::run()
     status_bar_set_working_mode(WIRED_KEYBOARD_MODE);
     status_bar_set_recording_state(false);
     status_bar_set_volume(5);
-    status_bar_set_battery_level(100);
+    // Display an empty icon until the first real ADC reading arrives.
+    status_bar_set_battery_level(0);
     status_bar_set_wifi_strength(-200);
     status_bar_set_module_status(MODA, 0);
     status_bar_set_module_status(MODB, 0);
@@ -652,6 +653,15 @@ void DisplayTask::UpdateDisplay(const DisplayMessage &msg)
     case MainCommand::ASR_RECORDING_STATE:
     {
         status_bar_set_recording_state(msg.asr_recording);
+        break;
+    }
+
+    case MainCommand::BATTERY_STATUS_UPDATE:
+    {
+        status_bar_set_battery_level(msg.battery_status.percent);
+        LOG_DEBUG("Battery", "Display voltage: %u mV, level: %u%%",
+                  (unsigned)msg.battery_status.voltage_mv,
+                  (unsigned)msg.battery_status.percent);
         break;
     }
 

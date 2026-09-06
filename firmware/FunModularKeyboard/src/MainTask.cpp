@@ -1066,6 +1066,25 @@ void MainTask::SendMusicPlayerUpdate(bool force)
     }
 }
 
+void MainTask::SendBatteryStatusUpdate()
+{
+    const BatteryReading reading = batteryMonitor_.read();
+
+    DisplayMessage msg{};
+    msg.type = uint8_t(MainCommand::BATTERY_STATUS_UPDATE);
+    msg.battery_status.voltage_mv = reading.voltage_mv;
+    msg.battery_status.percent = reading.percent;
+
+    LOG_DEBUG("Battery", "Voltage: %u mV, level: %u%%",
+              (unsigned)reading.voltage_mv,
+              (unsigned)reading.percent);
+
+    if (message_queue_ != nullptr && xQueueSend(message_queue_, &msg, 0) != pdPASS)
+    {
+        LOG_WARNING("Display", "Drop BATTERY_STATUS_UPDATE: display queue full");
+    }
+}
+
 void MainTask::updateLocalMusicProgress(uint32_t nowMs)
 {
     if (!musicPlayerState_.connected)
@@ -2388,6 +2407,8 @@ void MainTask::run()
 
     applyPowerMode(static_cast<Configuration::POWER_MODE>(configuration_.settings_.power_mode));
 
+    batteryMonitor_.begin();
+
     // 初始化协议
     protocol_.begin(115200);
 
@@ -2523,6 +2544,8 @@ void MainTask::run()
     SendDisplaySetting(configuration_.settings_);
     SendMusicPlayerUpdate(true);
     SendHaStatusSnapshot();
+    SendBatteryStatusUpdate();
+    lastBatteryStatusMs_ = millis();
 
     // // 麦克风
     // if (!mic_.Begin()) {
@@ -2631,6 +2654,11 @@ void MainTask::run()
         }
 
         const uint32_t nowMs = millis();
+        if (nowMs - lastBatteryStatusMs_ >= 5000)
+        {
+            lastBatteryStatusMs_ = nowMs;
+            SendBatteryStatusUpdate();
+        }
         processWiFiReconnect(nowMs);
         updateLocalMusicProgress(nowMs);
         if (configuration_.settings_.connect_host && WiFi.status() == WL_CONNECTED && !protocol_.isTcpConnected())

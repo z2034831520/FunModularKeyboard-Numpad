@@ -23,6 +23,7 @@
 #include "SerialProtocol.h"
 #include "IKeyboard.h"
 #include "VoiceRecognizer.h"
+#include "BatteryMonitor.h"
 
 #if ENABLE_EXTENSION_MODULES
 #define MODA_I2C_SLAVE_ADDR 0x06
@@ -335,6 +336,7 @@ private:
     void SendHaStatusUpdate(const HaStatusInfo &status);
     void SendHaStatusSnapshot();
     void SendMusicPlayerUpdate(bool force = false);
+    void SendBatteryStatusUpdate();
     void updateLocalMusicProgress(uint32_t nowMs);
     void SendMusicControlCommand(const char *action);
     void SendDisplaySetting(const DeviceSettings &setting);
@@ -377,6 +379,7 @@ private:
 #endif
 
     MatrixScanner scanner_;
+    BatteryMonitor batteryMonitor_;
     std::unique_ptr<IKeyboard> currentKeyboard_{nullptr};
     Configuration::WORK_MODE currentWorkMode_;
     Configuration &configuration_;
@@ -407,6 +410,7 @@ private:
     uint32_t lastMusicUiUpdateMs_{0};
     uint32_t lastMusicStatusRxMs_{0};
     uint32_t lastMusicProgressTickMs_{0};
+    uint32_t lastBatteryStatusMs_{0};
     bool voiceRecognitionBusy_{false};
     bool voiceCaptureActive_{false};
     bool asrSuspendedForMusic_{false};

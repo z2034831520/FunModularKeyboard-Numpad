@@ -1,22 +1,64 @@
 #include "lvgl_setup.h"
+#include "display_config.h"
+#include "nv3007_init.h"
 #include <Arduino.h>
 #include <lvgl.h>
 #include <SPIFFS.h>
-#include <TFT_eSPI.h> // 根据你的显示驱动修改
-
-static TFT_eSPI tft; // 显示驱动实例
+#include <TFT_eSPI.h>
 
 namespace
 {
-#if defined(TFT_BL)
     constexpr uint8_t kTftBacklightPwmChannel = 7;
     // Keep the LEDC configuration inside the ESP32-S3 timing budget.
     constexpr uint32_t kTftBacklightPwmFrequency = 5000;
     constexpr uint8_t kTftBacklightPwmResolution = 12;
+
+    TFT_eSPI s_lcd;
     bool s_backlight_pwm_ready = false;
-#endif
     bool s_tft_ready = false;
     bool s_spiffs_fs_registered = false;
+
+    void nv3007_write_command(uint8_t command, const uint8_t *parameters, uint8_t parameter_count)
+    {
+        s_lcd.writecommand(command);
+        for (uint8_t index = 0; index < parameter_count; ++index)
+        {
+            s_lcd.writedata(parameters[index]);
+        }
+    }
+
+    void nv3007_initialize()
+    {
+        // TFT_eSPI initializes the SPI peripheral for us. Reset once more so the
+        // generic bootstrap is discarded before applying the NV3007 sequence.
+        pinMode(display_config::kResetPin, OUTPUT);
+        digitalWrite(display_config::kResetPin, HIGH);
+        delay(10);
+        digitalWrite(display_config::kResetPin, LOW);
+        delay(120);
+        digitalWrite(display_config::kResetPin, HIGH);
+        delay(120);
+
+        s_lcd.startWrite();
+        size_t position = 0;
+        while (position < nv3007::kInitCommandsSize)
+        {
+            const uint8_t command = nv3007::kInitCommands[position++];
+            const uint8_t parameter_count = nv3007::kInitCommands[position++];
+            nv3007_write_command(command, &nv3007::kInitCommands[position], parameter_count);
+            position += parameter_count;
+        }
+        nv3007_write_command(0x11, nullptr, 0); // Sleep out
+        s_lcd.endWrite();
+        delay(120);
+
+        s_lcd.startWrite();
+        const uint8_t landscape_rotation = 0x60; // MX | MV | RGB
+        nv3007_write_command(0x36, &landscape_rotation, 1);
+        nv3007_write_command(0x29, nullptr, 0); // Display on
+        s_lcd.endWrite();
+        delay(20);
+    }
 
     String lvgl_spiffs_real_path(const char *path)
     {
@@ -99,48 +141,25 @@ namespace
         return LV_FS_RES_OK;
     }
 
-    void lvgl_write_panel_brightness(uint8_t brightness_percent)
-    {
-        if (!s_tft_ready)
-        {
-            return;
-        }
-
-        const uint8_t level = (uint8_t)((uint32_t)brightness_percent * 255UL / 100UL);
-        tft.startWrite();
-        tft.writecommand(0x53);
-        tft.writedata(level == 0 ? 0x24 : 0x2C);
-        tft.writecommand(0x51);
-        tft.writedata(level);
-        tft.endWrite();
-    }
 }
 
 void lvgl_set_backlight_brightness(uint8_t brightness_percent)
 {
     const uint8_t clamped = brightness_percent > 100 ? 100 : brightness_percent;
-
-    lvgl_write_panel_brightness(clamped);
-
-#if defined(TFT_BL)
     const uint32_t max_duty = (1UL << kTftBacklightPwmResolution) - 1UL;
     const uint32_t duty = (uint32_t)clamped * max_duty / 100UL;
-    const uint32_t applied_duty =
-#if defined(TFT_BACKLIGHT_ON) && (TFT_BACKLIGHT_ON == LOW)
-        max_duty - duty;
-#else
-        duty;
-#endif
+    const uint32_t applied_duty = max_duty - duty;
 
     if (!s_backlight_pwm_ready)
     {
-        pinMode(TFT_BL, OUTPUT);
+        pinMode(display_config::kBacklightPin, OUTPUT);
+        digitalWrite(display_config::kBacklightPin, display_config::kBacklightOffLevel);
         const double configured_frequency = ledcSetup(kTftBacklightPwmChannel,
                                                       kTftBacklightPwmFrequency,
                                                       kTftBacklightPwmResolution);
         if (configured_frequency > 0.0)
         {
-            ledcAttachPin(TFT_BL, kTftBacklightPwmChannel);
+            ledcAttachPin(display_config::kBacklightPin, kTftBacklightPwmChannel);
             s_backlight_pwm_ready = true;
         }
     }
@@ -151,18 +170,10 @@ void lvgl_set_backlight_brightness(uint8_t brightness_percent)
     }
     else
     {
-        const uint8_t on_level =
-#if defined(TFT_BACKLIGHT_ON)
-            TFT_BACKLIGHT_ON;
-#else
-            HIGH;
-#endif
-        const uint8_t off_level = on_level == HIGH ? LOW : HIGH;
-        digitalWrite(TFT_BL, clamped == 0 ? off_level : on_level);
+        digitalWrite(display_config::kBacklightPin,
+                     clamped == 0 ? display_config::kBacklightOffLevel
+                                  : display_config::kBacklightOnLevel);
     }
-#else
-    LV_UNUSED(clamped);
-#endif
 }
 
 void lvgl_register_spiffs_fs()
@@ -187,9 +198,16 @@ void lvgl_register_spiffs_fs()
 void lvgl_setup()
 {
     // 1. 初始化显示驱动
-    tft.begin();
-    tft.setRotation(1); // 根据需要调整
+    pinMode(display_config::kBacklightPin, OUTPUT);
+    digitalWrite(display_config::kBacklightPin, display_config::kBacklightOffLevel);
+    s_lcd.begin();
+    nv3007_initialize();
     s_tft_ready = true;
+    s_lcd.fillScreen(TFT_BLACK);
+    Serial.printf("LCD: NV3007 ready, %dx%d, SPI %ld Hz\n",
+                  display_config::kDisplayWidth,
+                  display_config::kDisplayHeight,
+                  (long)display_config::kSpiFrequency);
     lvgl_set_backlight_brightness(100);
 
     // 2. 初始化 LVGL
@@ -207,8 +225,8 @@ void lvgl_setup()
     lv_disp_drv_init(&disp_drv);
     disp_drv.draw_buf = &draw_buf;
     disp_drv.flush_cb = my_disp_flush; // 实现这个函数
-    disp_drv.hor_res = 428;            // 根据你的屏幕修改
-    disp_drv.ver_res = 142;
+    disp_drv.hor_res = display_config::kDisplayWidth;
+    disp_drv.ver_res = display_config::kDisplayHeight;
     lv_disp_drv_register(&disp_drv);
 
     // 5. 如果需要触摸屏，注册输入设备
@@ -225,10 +243,28 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
     uint32_t w = (area->x2 - area->x1 + 1);
     uint32_t h = (area->y2 - area->y1 + 1);
 
-    tft.startWrite();
-    tft.setAddrWindow(area->x1, area->y1, w, h);
-    tft.pushColors((uint16_t *)&color_p->full, w * h, true);
-    tft.endWrite();
+    if (s_tft_ready)
+    {
+        const uint16_t x1 = (uint16_t)area->x1 + display_config::kLandscapeXOffset;
+        const uint16_t x2 = x1 + (uint16_t)w - 1;
+        const uint16_t y1 = (uint16_t)area->y1 + display_config::kLandscapeYOffset;
+        const uint16_t y2 = y1 + (uint16_t)h - 1;
+
+        s_lcd.startWrite();
+        s_lcd.writecommand(0x2A); // Column address set
+        s_lcd.writedata(x1 >> 8);
+        s_lcd.writedata(x1 & 0xFF);
+        s_lcd.writedata(x2 >> 8);
+        s_lcd.writedata(x2 & 0xFF);
+        s_lcd.writecommand(0x2B); // Row address set
+        s_lcd.writedata(y1 >> 8);
+        s_lcd.writedata(y1 & 0xFF);
+        s_lcd.writedata(y2 >> 8);
+        s_lcd.writedata(y2 & 0xFF);
+        s_lcd.writecommand(0x2C); // Memory write
+        s_lcd.pushColors(reinterpret_cast<uint16_t*>(&color_p->full), w * h, true);
+        s_lcd.endWrite();
+    }
 
     lv_disp_flush_ready(disp);
 }

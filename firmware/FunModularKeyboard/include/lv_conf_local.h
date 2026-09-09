@@ -7,7 +7,6 @@
  * Keep the LVGL configuration owned by this project.  Options not defined
  * here are supplied by LVGL's lv_conf_internal.h defaults.
  */
-
 #define LV_FONT_MONTSERRAT_18 1
 #define LV_FONT_MONTSERRAT_24 1
 #define LV_FONT_MONTSERRAT_48 1

@@ -1,7 +1,6 @@
 #include "DisplayTask.h"
+#include "SystemTime.h"
 #include <WiFi.h>
-#include <NTPClient.h>
-#include <WiFiUdp.h>
 #include <SPIFFS.h>
 #include <cstdlib>
 #include <iostream>
@@ -214,26 +213,32 @@ namespace
 }
 
 // 获取当前时间并格式化
-void GetCurrentTime(char *date_buf, char *week_buf, char *time_buf, char *second_buf)
+bool GetCurrentTime(char *date_buf, char *week_buf, char *time_buf, char *second_buf)
 {
-    time_t rawtime;
-    struct tm *timeinfo;
-    time(&rawtime);
-    timeinfo = localtime(&rawtime);
+    struct tm timeInfo{};
+    if (!SystemTime::GetLocalTime(&timeInfo))
+    {
+        snprintf(date_buf, 12, "%s", "SYNCING");
+        snprintf(week_buf, 12, "%s", "");
+        snprintf(time_buf, 12, "%s", "--:--");
+        snprintf(second_buf, 3, "%s", "--");
+        return false;
+    }
 
     // 格式化日期（年份后两位）-月-日
     // strftime(date_buf, date_size, "%m-%d", timeinfo);  // 示例: "23-08-20"
-    sprintf(date_buf, "%s %.2d", months_uppercase_abbr[timeinfo->tm_mon], timeinfo->tm_mday);
+    snprintf(date_buf, 12, "%s %.2d", months_uppercase_abbr[timeInfo.tm_mon], timeInfo.tm_mday);
 
     // 格式化时间 时:分:秒
     // strftime(time_buf, time_size, "%H:%M:%S", timeinfo);  // 示例: "14:30:45"
     // strftime(time_buf, time_size, "%H:%M", timeinfo);  // 示例: "14:30"
     // strftime(second_buf, 3, "%S", timeinfo);  //秒
-    sprintf(time_buf, "%.2d:%.2d", timeinfo->tm_hour, timeinfo->tm_min);
-    sprintf(second_buf, "%.2d", timeinfo->tm_sec);
+    snprintf(time_buf, 12, "%.2d:%.2d", timeInfo.tm_hour, timeInfo.tm_min);
+    snprintf(second_buf, 3, "%.2d", timeInfo.tm_sec);
 
     // 周
-    sprintf(week_buf, "%s", weekdays[timeinfo->tm_wday]);
+    snprintf(week_buf, 12, "%s", weekdays[timeInfo.tm_wday]);
+    return true;
 }
 
 // 定时器回调函数（每秒更新一次）
@@ -267,6 +272,7 @@ void TimeShow()
     // lv_obj_align(ui_LabelData, LV_ALIGN_TOP_LEFT, 10, 10);  // 左上角
 
     // 启动定时器（每秒更新一次）
+    UpdateTimeCb(nullptr);
     lv_timer_create(UpdateTimeCb, 1000, NULL);
 }
 
@@ -372,9 +378,7 @@ void DisplayTask::HexToRGB(const char *hexColor, uint8_t &r, uint8_t &g, uint8_t
 void DisplayTask::run()
 {
     // LOG_DEBUG("Log", "Start DisplayTask!");
-    // 初始化 LVGL
-    lv_init();
-    // 初始化显示和触摸（需自己实现）
+    // 初始化 LVGL、显示和触摸（需自己实现）
     lvgl_setup();
     // 加载 SquareLine Studio 生成的 UI
     ui_init();

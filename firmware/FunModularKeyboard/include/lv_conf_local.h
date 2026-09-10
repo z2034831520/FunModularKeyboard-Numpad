@@ -20,4 +20,10 @@
 #undef LV_FONT_DEFAULT
 #define LV_FONT_DEFAULT &lv_font_montserrat_14
 
+// Let LVGL read ESP32's monotonic timer directly. Without a tick source,
+// lv_timer_create() callbacks never become due after their initial update.
+#define LV_TICK_CUSTOM 1
+#define LV_TICK_CUSTOM_INCLUDE "esp_timer.h"
+#define LV_TICK_CUSTOM_SYS_TIME_EXPR ((uint32_t)(esp_timer_get_time() / 1000ULL))
+
 #endif

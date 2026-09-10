@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <map>
 #include <string>
+#include <atomic>
 #include <memory> // 添加智能指针头文件
 // #include <BleKeyboard.h>
 #include "MatrixScanner.h"
@@ -294,6 +295,10 @@ public:
     // 设置工作模式（可在运行时调用）
     void setWorkMode(Configuration::WORK_MODE mode);
     void setBoost5VEnabled(bool enabled);
+    bool IsStartupReady() const
+    {
+        return startupReady_.load(std::memory_order_acquire);
+    }
 
 protected:
     void run();
@@ -353,7 +358,9 @@ private:
     void processWiFiReconnect(uint32_t nowMs);
     void onWiFiConnected();
     void updateProtocolTcpEndpoint();
-    bool SyncTimeFromNTP();
+    void StartTimeSync();
+    void ProcessTimeSync(uint32_t nowMs);
+    bool SyncTimeBeforeBluetoothStart();
     bool switchKeymapProfile(int delta);
     void reconcileVoiceRuntimeState();
     bool consumeUiSettingsRequest(ui_settings_snapshot_t &snapshot, bool &persist);
@@ -421,6 +428,10 @@ private:
     uint32_t wifiConnectAttemptStartedMs_{0};
     uint32_t wifiNextRetryAtMs_{0};
     uint32_t tcpDisconnectedSinceMs_{0};
+    bool timeSyncPending_{false};
+    uint32_t timeSyncStartedMs_{0};
+    uint32_t timeSyncNextCheckMs_{0};
+    std::atomic<bool> startupReady_{false};
     bool boost5VPinInitialized_{false};
     bool boost5VEnabled_{true};
 #if ENABLE_EXTENSION_MODULES

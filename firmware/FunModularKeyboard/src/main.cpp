@@ -4,6 +4,7 @@
 #include "DisplayTask.h"
 #include "SPIFFS.h"
 #include "LogManager.h"
+#include "SystemTime.h"
 
 // 配置
 Configuration config;
@@ -32,6 +33,8 @@ void printSystemTime()
 
 void setup()
 {
+    SystemTime::ConfigureChinaTimeZone();
+
     // Serial.begin(115200);
 
     // 初始化日志系统
@@ -97,7 +100,15 @@ void setup()
     // 启动任务
     //  先启动主任务，给 BLE/WiFi 初始化预留更多可用内存。
     main_task.begin();
-    delay(300);
+
+    // BLE mode may briefly use WiFi to obtain NTP time. Keep LVGL from taking
+    // internal heap until the keyboard stack has finished initialization.
+    const uint32_t startupWaitStartedMs = millis();
+    constexpr uint32_t kMainTaskStartupTimeoutMs = 22000;
+    while (!main_task.IsStartupReady() && millis() - startupWaitStartedMs < kMainTaskStartupTimeoutMs)
+    {
+        delay(20);
+    }
     display_task.begin();
 }
 

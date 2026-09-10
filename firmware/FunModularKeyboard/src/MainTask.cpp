@@ -2,29 +2,26 @@
 #include "BLEKeyboardImpl.h"
 #include "USBKeyboardImpl.h"
 #include "KeycodeCodec.h"
+#include "SystemTime.h"
 #include "ui/ui.h"
 #include "ui/ui_MusicScreenSecondary.h"
 #include <ctype.h>
+#include <time.h>
 
 #include <WiFi.h>
-#include <NTPClient.h>
 #include <WiFiUdp.h>
 #include <mbedtls/base64.h>
+#include "esp_attr.h"
 #include "esp_bt.h"
 #include "esp_heap_caps.h"
+#include "lwip/apps/sntp.h"
 
 #define configCHECK_FOR_STACK_OVERFLOW 2 // 启用 FreeRTOS 堆栈溢出检测
 
 /**************************************************************************/
 // 通过网络获取时间
 // NTP 配置
-const char *ntpServer = "pool.ntp.org"; // NTP 服务器
-const long gmtOffset_sec = 8 * 3600;    // 北京时间 GMT+8
-const int daylightOffset_sec = 0;       // 夏令时偏移（中国不使用夏令时）
-
-// 创建 NTPClient 实例
-WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, ntpServer, gmtOffset_sec, daylightOffset_sec);
+RTC_DATA_ATTR uint32_t g_bleTimeSyncRestartMarker = 0;
 
 namespace
 {
@@ -35,6 +32,13 @@ namespace
     constexpr uint32_t kSettingsUiOverrideMask = kSettingsUiKey1Bit | kSettingsUiKey2Bit;
     constexpr uint32_t kWifiRetryIntervalMs = 5000;
     constexpr uint32_t kWifiConnectTimeoutMs = 10000;
+    constexpr uint32_t kTimeSyncCheckIntervalMs = 500;
+    constexpr uint32_t kTimeSyncRestartIntervalMs = 30000;
+    constexpr uint32_t kBluetoothStartupTimeSyncTimeoutMs = 10000;
+    constexpr uint32_t kBleTimeSyncRestartMagic = 0x54494D45; // "TIME"
+    constexpr const char *kNtpServerPrimary = "0.cn.pool.ntp.org";
+    constexpr const char *kNtpServerSecondary = "1.cn.pool.ntp.org";
+    constexpr const char *kNtpServerFallback = "pool.ntp.org";
     constexpr const char *kProfileIcons[CONFIG_PROFILE_COUNT] = {
         LV_SYMBOL_HOME,
         LV_SYMBOL_AUDIO,
@@ -490,6 +494,9 @@ void MainTask::stopWiFiReconnect()
     wifiWasConnected_ = false;
     wifiConnectAttemptStartedMs_ = 0;
     wifiNextRetryAtMs_ = 0;
+    timeSyncPending_ = false;
+    timeSyncStartedMs_ = 0;
+    timeSyncNextCheckMs_ = 0;
     WiFi.disconnect(true, true);
     WiFi.mode(WIFI_OFF);
     protocol_.disableTcpClient();
@@ -501,10 +508,7 @@ void MainTask::onWiFiConnected()
     wifiConnectAttemptStartedMs_ = 0;
     wifiNextRetryAtMs_ = 0;
     updateProtocolTcpEndpoint();
-    if (SyncTimeFromNTP())
-    {
-        LOG_DEBUG("Log", "SyncTimeFromNTP sucess!");
-    }
+    StartTimeSync();
     reconcileVoiceRuntimeState();
 }
 
@@ -1441,26 +1445,130 @@ bool MainTask::switchKeymapProfile(int delta)
 }
 
 // 从 NTP 同步时间到系统时钟
-bool MainTask::SyncTimeFromNTP()
+void MainTask::StartTimeSync()
 {
-    LOG_DEBUG("Log", "正在从 NTP 同步时间...");
-    timeClient.begin();
-    if (timeClient.forceUpdate())
-    {
-        // 获取 NTP 时间（UTC 时间戳）
-        unsigned long epochTime = timeClient.getEpochTime();
+    // SNTP keeps the Unix clock in UTC. localtime_r() applies the POSIX TZ rule.
+    configTzTime(SystemTime::kChinaTimeZone,
+                 kNtpServerPrimary,
+                 kNtpServerSecondary,
+                 kNtpServerFallback);
 
-        // 设置系统时钟
-        struct timeval tv;
-        tv.tv_sec = epochTime;
-        tv.tv_usec = 0;
-        settimeofday(&tv, NULL);
-        LOG_DEBUG("Log", "系统时钟已设置为: ");
+    timeSyncPending_ = true;
+    timeSyncStartedMs_ = millis();
+    timeSyncNextCheckMs_ = timeSyncStartedMs_;
+    LOG_INFO("Time", "NTP sync started (timezone=Asia/Shanghai, UTC+8)");
+}
+
+void MainTask::ProcessTimeSync(uint32_t nowMs)
+{
+    if (!timeSyncPending_ || WiFi.status() != WL_CONNECTED)
+    {
+        return;
+    }
+
+    if (static_cast<int32_t>(nowMs - timeSyncNextCheckMs_) < 0)
+    {
+        return;
+    }
+
+    struct tm timeInfo{};
+    if (SystemTime::GetLocalTime(&timeInfo))
+    {
+        char formattedTime[32] = {0};
+        strftime(formattedTime, sizeof(formattedTime), "%Y-%m-%d %H:%M:%S", &timeInfo);
+        LOG_INFO("Time", "NTP sync complete: %s", formattedTime);
+        timeSyncPending_ = false;
+        return;
+    }
+
+    if (nowMs - timeSyncStartedMs_ >= kTimeSyncRestartIntervalMs)
+    {
+        LOG_WARNING("Time", "NTP sync timed out; restarting SNTP");
+        StartTimeSync();
+        return;
+    }
+
+    timeSyncNextCheckMs_ = nowMs + kTimeSyncCheckIntervalMs;
+}
+
+bool MainTask::SyncTimeBeforeBluetoothStart()
+{
+    struct tm timeInfo{};
+    if (SystemTime::GetLocalTime(&timeInfo))
+    {
         return true;
     }
 
-    LOG_DEBUG("Log", "NTP 时间同步失败");
-    return false;
+    String ssid = configuration_.settings_.wifi_ssid;
+    String password = configuration_.settings_.wifi_password;
+    ssid.trim();
+    password.trim();
+    if (ssid.isEmpty())
+    {
+        LOG_WARNING("Time", "Cannot sync time before BLE start: WiFi SSID is empty");
+        return false;
+    }
+
+    LOG_INFO("Time", "Temporarily connecting WiFi before BLE startup");
+    WiFi.persistent(false);
+    WiFi.setAutoReconnect(false);
+    WiFi.setSleep(false);
+    WiFi.mode(WIFI_STA);
+    WiFi.disconnect(false, false);
+    delay(20);
+    WiFi.begin(ssid.c_str(), password.c_str());
+
+    const uint32_t wifiStartedMs = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - wifiStartedMs < kWifiConnectTimeoutMs)
+    {
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+
+    bool synchronized = false;
+    if (WiFi.status() == WL_CONNECTED)
+    {
+        LOG_INFO("Time", "Temporary WiFi connected, IP=%s", WiFi.localIP().toString().c_str());
+        StartTimeSync();
+
+        const uint32_t syncStartedMs = millis();
+        while (millis() - syncStartedMs < kBluetoothStartupTimeSyncTimeoutMs)
+        {
+            if (SystemTime::GetLocalTime(&timeInfo))
+            {
+                char formattedTime[32] = {0};
+                strftime(formattedTime, sizeof(formattedTime), "%Y-%m-%d %H:%M:%S", &timeInfo);
+                LOG_INFO("Time", "NTP sync complete before BLE start: %s", formattedTime);
+                synchronized = true;
+                break;
+            }
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+    }
+    else
+    {
+        LOG_WARNING("Time", "Temporary WiFi connection failed, status=%d", WiFi.status());
+    }
+
+    if (!synchronized && WiFi.status() == WL_CONNECTED)
+    {
+        LOG_WARNING("Time", "NTP sync timed out before BLE start");
+    }
+
+    timeSyncPending_ = false;
+    timeSyncStartedMs_ = 0;
+    timeSyncNextCheckMs_ = 0;
+    if (sntp_enabled())
+    {
+        sntp_stop();
+    }
+    WiFi.disconnect(true, false);
+    WiFi.mode(WIFI_OFF);
+    delay(100);
+    g_bleTimeSyncRestartMarker = kBleTimeSyncRestartMagic;
+    LOG_INFO("Time", "Temporary WiFi stopped; restarting to reclaim memory before BLE startup");
+    delay(50);
+    ESP.restart();
+    return synchronized;
 }
 
 int MainTask::parseKeymapSetCommand(int seq, JsonObject data)
@@ -2430,6 +2538,17 @@ void MainTask::run()
         // }
     }
 
+    const bool skipBleStartupTimeSync = g_bleTimeSyncRestartMarker == kBleTimeSyncRestartMagic;
+    g_bleTimeSyncRestartMarker = 0;
+
+    // BLE-only mode cannot keep WiFi active due to memory pressure. Sync once before BLE starts.
+    if (!skipBleStartupTimeSync &&
+        configuration_.settings_.work_mode == Configuration::BLUETOOTH_KEYBOARD_MODE &&
+        configuration_.settings_.wifi_switch)
+    {
+        SyncTimeBeforeBluetoothStart();
+    }
+
     // BLE-only 模式下释放经典蓝牙内存，避免与 WiFi 同时初始化时堆内存不足。
     if (configuration_.settings_.work_mode == Configuration::BLUETOOTH_KEYBOARD_MODE)
     {
@@ -2457,6 +2576,7 @@ void MainTask::run()
     setWorkMode(desiredMode);
 
     logHeapSnapshot("run:after_setWorkMode");
+    startupReady_.store(true, std::memory_order_release);
 
     // 蓝牙初始化
     if (currentWorkMode_ == Configuration::BLUETOOTH_KEYBOARD_MODE)
@@ -2660,6 +2780,7 @@ void MainTask::run()
             SendBatteryStatusUpdate();
         }
         processWiFiReconnect(nowMs);
+        ProcessTimeSync(nowMs);
         updateLocalMusicProgress(nowMs);
         if (configuration_.settings_.connect_host && WiFi.status() == WL_CONNECTED && !protocol_.isTcpConnected())
         {

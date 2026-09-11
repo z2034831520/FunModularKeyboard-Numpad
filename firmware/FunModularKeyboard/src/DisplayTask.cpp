@@ -392,9 +392,6 @@ void DisplayTask::run()
     // Display an empty icon until the first real ADC reading arrives.
     status_bar_set_battery_level(0);
     status_bar_set_wifi_strength(-200);
-    status_bar_set_module_status(MODA, 0);
-    status_bar_set_module_status(MODB, 0);
-
     // 麦克风
 #if !defined(ENABLE_VOICE_ASR_MAINTASK)
     delay(100);
@@ -647,13 +644,6 @@ void DisplayTask::UpdateDisplay(const DisplayMessage &msg)
 
         break;
     }
-    case MainCommand::MODULE_STATUS:
-    {
-        mod_status_ = msg.module;
-        status_bar_set_module_status(mod_status_.mod_type, mod_status_.status);
-        break;
-    }
-
     case MainCommand::ASR_RECORDING_STATE:
     {
         status_bar_set_recording_state(msg.asr_recording);
@@ -763,8 +753,6 @@ void DisplayTask::UpdateDisplay(const DisplayMessage &msg)
         ui_HaScreenSecondary_set_mode_status(msg.ha_status.work_mode);
         ui_HaScreenSecondary_set_voice_status(msg.ha_status.voice_enabled,
                                               msg.ha_status.voice_recording);
-        ui_HaScreenSecondary_set_module_status(msg.ha_status.module_a_connected,
-                                               msg.ha_status.module_b_connected);
         break;
     }
 

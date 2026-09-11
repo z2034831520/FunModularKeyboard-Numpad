@@ -31,8 +31,6 @@ struct HaStatusInfo
     int work_mode{0};
     bool voice_enabled{false};
     bool voice_recording{false};
-    bool module_a_connected{false};
-    bool module_b_connected{false};
     char ip_address[24]{0};
     char server_endpoint[32]{0};
 };
@@ -72,7 +70,6 @@ struct DisplayMessage
     MusicPlayerInfo music_player;
     BatteryStatusInfo battery_status;
     ui_settings_snapshot_t setting;
-    MODULESTATUS module;
     char profile_name[24]{0};
     char profile_icon[8]{0};
     char profile_icon_path[40]{0};
@@ -95,7 +92,6 @@ enum class MainCommand
     SETTING_UPDATE,
     // SPECTRUM_DISPLAY,
     SYSTEM_RESET,
-    MODULE_STATUS,
     ASR_RECORDING_STATE,
     PC_STATUS_UPDATE,
     HA_STATUS_UPDATE,

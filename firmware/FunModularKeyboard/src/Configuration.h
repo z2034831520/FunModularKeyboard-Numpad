@@ -8,7 +8,6 @@
 #include "LogManager.h"
 
 #define CONFIG_ALL_KEY_NUM 26 // 包含其他模块的按键总数量
-#define CONFIG_SPECIAL_INPUT_NUM 15
 #define CONFIG_PROFILE_COUNT 8
 
 struct KeyMapping
@@ -46,18 +45,6 @@ struct DeviceSettings
     String voice_baidu_secret_key = "";
     int pc_status_mask = 0;
     uint8_t active_keymap_profile = 0;
-};
-
-enum PLUGIN_MODULE
-{
-    MODA = 0,
-    MODB,
-};
-
-struct MODULESTATUS
-{
-    PLUGIN_MODULE mod_type;
-    bool status;
 };
 
 class Configuration
@@ -122,11 +109,6 @@ public:
     String getDeviceName() const { return device_name_; }
     DeviceSettings &getSettings() { return settings_; }
     KeyMapping getKeyMapping(uint8_t physical_key) const;
-    KeyMapping getSpecialInputMapping(const String &input_id) const;
-    KeyMapping *getMutableSpecialInputMapping(const String &input_id);
-    static int getSpecialInputIndex(const String &input_id);
-    static const char *getSpecialInputId(uint8_t index);
-
     bool parseKeyMapping(Configuration::KEY_TYPE key_type, const String &value, KeyMapping &mapping);
     bool writeSection(CSimpleIniA &ini, const char *section);
 
@@ -140,7 +122,6 @@ public:
     String device_id_;
     String firmware_version_;
     KeyMapping key_mappings_[CONFIG_ALL_KEY_NUM];
-    KeyMapping special_key_mappings_[CONFIG_SPECIAL_INPUT_NUM];
     DeviceSettings settings_;
 
     int all_key_num_{16};

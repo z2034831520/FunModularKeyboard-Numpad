@@ -36,18 +36,12 @@ extern lv_obj_t * ui_LabelSecond;
 extern lv_obj_t * ui_LabelWeek;
 extern lv_obj_t * ui_LabelKeyboard;
 extern lv_obj_t * ui_LabelWorkmode;
-extern lv_obj_t * ui_LabelModA;
-extern lv_obj_t * ui_LabelModB;
 extern lv_obj_t * ui_LabelRGBLight;
 extern lv_obj_t * ui_LabelTFTLight;
-extern lv_obj_t * ui_ImageModA;
-extern lv_obj_t * ui_ImageModB;
 extern lv_obj_t * ui_line1;
 extern lv_obj_t * ui_line2;
 extern lv_obj_t * ui_line3;
-extern lv_obj_t * ui_line4;
 extern lv_obj_t * ui_line5;
-extern lv_obj_t * ui_line6;
 // CUSTOM VARIABLES
 
 #ifdef __cplusplus

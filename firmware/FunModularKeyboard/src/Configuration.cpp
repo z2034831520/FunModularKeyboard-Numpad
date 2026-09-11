@@ -3,23 +3,6 @@
 
 namespace
 {
-    const char *const kSpecialInputIds[CONFIG_SPECIAL_INPUT_NUM] = {
-        "KNOB1_LEFT",
-        "KNOB1_RIGHT",
-        "KNOB1_CLICK",
-        "KNOB2_LEFT",
-        "KNOB2_RIGHT",
-        "KNOB2_CLICK",
-        "KNOB3_LEFT",
-        "KNOB3_RIGHT",
-        "KNOB3_CLICK",
-        "MODB_KNOB_LEFT",
-        "MODB_KNOB_RIGHT",
-        "SLIDER1_LEFT",
-        "SLIDER1_RIGHT",
-        "SLIDER2_LEFT",
-        "SLIDER2_RIGHT"};
-
     const char *const kProfileDisplayNames[CONFIG_PROFILE_COUNT] = {
         "APP 1",
         "APP 2",
@@ -90,47 +73,6 @@ Configuration::~Configuration()
 {
     if (mutex_)
         vSemaphoreDelete(mutex_);
-}
-
-int Configuration::getSpecialInputIndex(const String &input_id)
-{
-    for (int i = 0; i < CONFIG_SPECIAL_INPUT_NUM; ++i)
-    {
-        if (input_id.equalsIgnoreCase(kSpecialInputIds[i]))
-        {
-            return i;
-        }
-    }
-    return -1;
-}
-
-const char *Configuration::getSpecialInputId(uint8_t index)
-{
-    if (index >= CONFIG_SPECIAL_INPUT_NUM)
-    {
-        return nullptr;
-    }
-    return kSpecialInputIds[index];
-}
-
-KeyMapping Configuration::getSpecialInputMapping(const String &input_id) const
-{
-    const int index = getSpecialInputIndex(input_id);
-    if (index < 0)
-    {
-        return KeyMapping();
-    }
-    return special_key_mappings_[index];
-}
-
-KeyMapping *Configuration::getMutableSpecialInputMapping(const String &input_id)
-{
-    const int index = getSpecialInputIndex(input_id);
-    if (index < 0)
-    {
-        return nullptr;
-    }
-    return &special_key_mappings_[index];
 }
 
 void Configuration::InitSPIFFS()
@@ -264,11 +206,6 @@ bool Configuration::load(const char *path)
     {
         resetKeyMappingState(key_mappings_[i]);
     }
-    for (uint8_t i = 0; i < CONFIG_SPECIAL_INPUT_NUM; ++i)
-    {
-        resetKeyMappingState(special_key_mappings_[i]);
-    }
-
     xSemaphoreGive(mutex_);
     return loadActiveProfileKeyMapping(path);
 }
@@ -285,11 +222,6 @@ bool Configuration::loadActiveProfileKeyMapping(const char *fallbackPath)
     {
         resetKeyMappingState(key_mappings_[i]);
     }
-    for (uint8_t i = 0; i < CONFIG_SPECIAL_INPUT_NUM; ++i)
-    {
-        resetKeyMappingState(special_key_mappings_[i]);
-    }
-
     CSimpleIniA ini;
     ini.SetUnicode();
 
@@ -346,36 +278,6 @@ bool Configuration::loadActiveProfileKeyMapping(const char *fallbackPath)
         if (mapping_mackey_str && strlen(mapping_mackey_str) > 0)
         {
             parseKeyMapping(MACROS_KEY, mapping_mackey_str, key_mappings_[i]);
-        }
-    }
-
-    // Parse [special_key_mapping] & [special_key_macro] section
-    for (uint8_t i = 0; i < CONFIG_SPECIAL_INPUT_NUM; ++i)
-    {
-        const char *input_id = getSpecialInputId(i);
-        if (!input_id)
-        {
-            continue;
-        }
-
-        const char *mapping_normal_str = ini.GetValue("special_key_mapping", input_id, "");
-        const char *mapping_macro_str = ini.GetValue("special_key_macro", input_id, "");
-
-        if (mapping_normal_str && strlen(mapping_normal_str) > 0)
-        {
-            if (isNamedKeySequence(String(mapping_normal_str)))
-            {
-                parseKeyMapping(NORMAL_KEY, mapping_normal_str, special_key_mappings_[i]);
-            }
-            else
-            {
-                parseKeyMapping(FUNCTION_KEY, mapping_normal_str, special_key_mappings_[i]);
-            }
-        }
-
-        if (mapping_macro_str && strlen(mapping_macro_str) > 0)
-        {
-            parseKeyMapping(MACROS_KEY, mapping_macro_str, special_key_mappings_[i]);
         }
     }
 
@@ -490,25 +392,6 @@ bool Configuration::SaveKeyMapping(const char *path)
         char key[4];
         snprintf(key, sizeof(key), "%d", i + 1);
         ini.SetValue("key_macro", key, "");
-    }
-
-    for (uint8_t i = 0; i < CONFIG_SPECIAL_INPUT_NUM; ++i)
-    {
-        const char *input_id = getSpecialInputId(i);
-        if (!input_id)
-        {
-            continue;
-        }
-
-        String mapping_str = special_key_mappings_[i].function_key;
-        if (mapping_str.isEmpty())
-        {
-            mapping_str = buildKeySequence(special_key_mappings_[i].normal_key, special_key_mappings_[i].normal_key_count);
-        }
-        ini.SetValue("special_key_mapping", input_id, mapping_str.c_str());
-
-        String macro_str = buildKeySequence(special_key_mappings_[i].macros_key, special_key_mappings_[i].macros_key_count);
-        ini.SetValue("special_key_macro", input_id, macro_str.c_str());
     }
 
     // 保存到文件

@@ -11,7 +11,6 @@ static lv_obj_t *recording_dot = NULL;
 static lv_obj_t *volume_icon = NULL;
 static lv_obj_t *wifi_icon = NULL;
 static lv_obj_t *battery_icon = NULL;
-static lv_obj_t *moda_status_icon = NULL;
 static lv_timer_t *recording_blink_timer = NULL;
 static bool recording_blink_visible = false;
 
@@ -26,8 +25,6 @@ static void recording_blink_timer_cb(lv_timer_t *timer)
     recording_blink_visible = !recording_blink_visible;
     lv_obj_set_style_bg_opa(recording_dot, recording_blink_visible ? LV_OPA_COVER : LV_OPA_30, 0);
 }
-static lv_obj_t *modb_status_icon = NULL;
-
 void ui_StatusBar_init(void)
 {
     // 只在主屏幕存在时才创建状态栏
@@ -96,19 +93,7 @@ void ui_StatusBar_init(void)
     lv_obj_add_style(battery_icon, &icon_medium_style, 0);  // 小图标
     lv_obj_set_style_text_color(battery_icon, lv_color_hex(0x808080), 0);
 
-    moda_status_icon = lv_label_create(status_bar);
-    lv_label_set_text(moda_status_icon, LV_SYMBOL_OK);
-    lv_obj_align(moda_status_icon, LV_ALIGN_TOP_LEFT, 328, 88);
-    lv_obj_add_style(moda_status_icon, &icon_medium_style, 0);  // 小图标
-    lv_obj_set_style_text_color(moda_status_icon, lv_color_hex(0x5CEA4C), 0);
-
-    modb_status_icon = lv_label_create(status_bar);
-    lv_label_set_text(modb_status_icon, LV_SYMBOL_CLOSE);
-    lv_obj_align(modb_status_icon, LV_ALIGN_TOP_LEFT, 382, 88);
-    lv_obj_add_style(modb_status_icon, &icon_medium_style, 0);  // 小图标
-    lv_obj_set_style_text_color(modb_status_icon, lv_color_hex(0x901B27), 0);    
 }
-
 // 在status_bar.c中实现
 void ui_StatusBar_show(bool show)
 {
@@ -210,34 +195,6 @@ void status_bar_set_working_mode(int mode)
         }
         case WIRELESS_2_4G_KEYBOARD_MODE: {
             lv_label_set_text(workmode_icon, LV_SYMBOL_DRIVE);
-            break;
-        }
-        default:break;
-    }
-}
-
-// 更新模块插入状态
-void status_bar_set_module_status(int mode, bool status)
-{
-    switch (mode) {
-        case UI_MODA: {
-            if (status) {
-                lv_label_set_text(moda_status_icon, LV_SYMBOL_OK);
-                lv_obj_set_style_text_color(moda_status_icon, lv_color_hex(0x5CEA4C), 0);    
-            } else {
-                lv_label_set_text(moda_status_icon, LV_SYMBOL_CLOSE);
-                lv_obj_set_style_text_color(moda_status_icon, lv_color_hex(0x901B27), 0);                    
-            }
-            break;
-        }
-        case UI_MODB: {
-            if (status) {
-                lv_label_set_text(modb_status_icon, LV_SYMBOL_OK);
-                lv_obj_set_style_text_color(modb_status_icon, lv_color_hex(0x5CEA4C), 0);    
-            } else {
-                lv_label_set_text(modb_status_icon, LV_SYMBOL_CLOSE);
-                lv_obj_set_style_text_color(modb_status_icon, lv_color_hex(0x901B27), 0);                    
-            }            
             break;
         }
         default:break;

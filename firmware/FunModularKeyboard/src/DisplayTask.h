@@ -40,7 +40,6 @@ private:
     DisplayMessage msg_;
     RGBLightControl rgbLightControl_;
     ui_settings_snapshot_t disp_setting_;
-    MODULESTATUS mod_status_;
     Mic mic_;
     AudioAnalyzer audioAnalyzer_{SAMPLE_RATE};
     uint16_t fftIndex_{0};

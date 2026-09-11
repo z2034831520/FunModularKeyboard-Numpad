@@ -324,97 +324,7 @@ void MainTask::triggerMappedInput(const KeyMapping &mapping)
     }
 }
 
-bool MainTask::handleSpecialInputEvent(const String &input_id, uint8_t fallbackDisplayAction)
-{
-    protocol_.sendInputActivity(0, input_id, true);
-
-    KeyMapping mapping = configuration_.getSpecialInputMapping(input_id);
-    if (hasMappedOutput(mapping))
-    {
-        triggerMappedInput(mapping);
-        return true;
-    }
-
-    if (fallbackDisplayAction != 0)
-    {
-        SendDisplayAction(fallbackDisplayAction);
-    }
-
-    return false;
-}
-
-#if ENABLE_EXTENSION_MODULES
-void MainTask::handleModuleKnobInput(const char *left_input_id,
-                                     const char *right_input_id,
-                                     const char *click_input_id,
-                                     uint8_t status,
-                                     uint8_t press,
-                                     uint8_t &last_status,
-                                     uint8_t &last_press)
-{
-    if (status != 0 && status != last_status)
-    {
-        if (status == 1)
-        {
-            handleSpecialInputEvent(String(left_input_id));
-        }
-        else if (status == 2)
-        {
-            handleSpecialInputEvent(String(right_input_id));
-        }
-    }
-    last_status = status;
-
-    if (press != 0 && last_press == 0)
-    {
-        handleSpecialInputEvent(String(click_input_id));
-    }
-    last_press = press;
-}
-
-void MainTask::handleSliderInput(const char *left_input_id,
-                                 const char *right_input_id,
-                                 int &last_value,
-                                 int &accumulated_delta,
-                                 uint32_t current_value,
-                                 uint32_t range_min,
-                                 uint32_t range_max)
-{
-    const int current = static_cast<int>(current_value);
-    if (last_value < 0)
-    {
-        last_value = current;
-        accumulated_delta = 0;
-        return;
-    }
-
-    const int delta = current - last_value;
-    last_value = current;
-
-    if (delta == 0)
-    {
-        return;
-    }
-
-    const uint32_t range = (range_max > range_min) ? (range_max - range_min) : 0;
-    const int stepThreshold = max(12, static_cast<int>(range / 30));
-
-    accumulated_delta += delta;
-    while (accumulated_delta >= stepThreshold)
-    {
-        handleSpecialInputEvent(String(right_input_id));
-        accumulated_delta -= stepThreshold;
-    }
-    while (accumulated_delta <= -stepThreshold)
-    {
-        handleSpecialInputEvent(String(left_input_id));
-        accumulated_delta += stepThreshold;
-    }
-}
-
 // 连接 WiFi
-#endif
-
 bool MainTask::ConnectToWiFi(const String &ssid, const String &password)
 {
     String ssidTrimmed = ssid;
@@ -1279,32 +1189,6 @@ void MainTask::sendCurrentKeymapSnapshot(int seq)
         key["function"] = function_key_str;
     }
 
-    for (int i = 0; i < CONFIG_SPECIAL_INPUT_NUM; ++i)
-    {
-        const char *inputId = Configuration::getSpecialInputId(i);
-        if (!inputId)
-        {
-            continue;
-        }
-
-        const KeyMapping &mapping = configuration_.special_key_mappings_[i];
-        String normal_key_str;
-        String macro_str;
-        String function_key_str = mapping.function_key;
-        if (function_key_str.isEmpty())
-        {
-            normal_key_str = buildKeySequenceString(mapping.normal_key, mapping.normal_key_count);
-            macro_str = buildKeySequenceString(mapping.macros_key, mapping.macros_key_count);
-        }
-
-        JsonObject key = keymapArray.createNestedObject();
-        key["physical"] = 0;
-        key["input_id"] = inputId;
-        key["normal"] = normal_key_str;
-        key["macro"] = macro_str;
-        key["function"] = function_key_str;
-    }
-
     protocol_.sendKeymap(keymapArray, seq);
 }
 
@@ -1681,20 +1565,9 @@ int MainTask::parseSingleKeyMapping(JsonObject keyObj)
     //     return -1;
     // }
 
-    String inputId;
     KeyMapping *targetMapping = nullptr;
 
-    if (keyObj.containsKey("input_id") && keyObj["input_id"].is<const char *>())
-    {
-        inputId = keyObj["input_id"].as<String>();
-        targetMapping = configuration_.getMutableSpecialInputMapping(inputId);
-        if (!targetMapping)
-        {
-            LOG_ERROR("Log", "Unknown input_id: %s", inputId.c_str());
-            return -1;
-        }
-    }
-    else if (keyObj["physical"].is<int>())
+    if (keyObj["physical"].is<int>())
     {
         int physicalKey_index = keyObj["physical"].as<int>() - 1;
         if (physicalKey_index < 0 || physicalKey_index >= CONFIG_ALL_KEY_NUM)
@@ -2061,40 +1934,6 @@ void MainTask::onCommandReceived(int cmd, int seq, JsonObject data)
             ++keymapEntryCount;
         }
 
-        for (int i = 0; i < CONFIG_SPECIAL_INPUT_NUM; ++i)
-        {
-            const char *inputId = Configuration::getSpecialInputId(i);
-            if (!inputId)
-            {
-                continue;
-            }
-
-            const KeyMapping &mapping = configuration_.special_key_mappings_[i];
-            String normal_key_str;
-            String macro_str;
-            String function_key_str = mapping.function_key;
-            if (function_key_str.isEmpty())
-            {
-                normal_key_str = buildKeySequenceString(mapping.normal_key, mapping.normal_key_count);
-                macro_str = buildKeySequenceString(mapping.macros_key, mapping.macros_key_count);
-            }
-
-            JsonObject key = keymapArray.createNestedObject();
-            if (key.isNull())
-            {
-                LOG_ERROR("Log", "[CMD_KEYMAP_GET] JSON capacity exhausted at special input %s (capacity=%u)",
-                          inputId,
-                          static_cast<unsigned>(kKeymapDocCapacity));
-                break;
-            }
-            key["physical"] = 0;
-            key["input_id"] = inputId;
-            key["normal"] = normal_key_str;
-            key["macro"] = macro_str;
-            key["function"] = function_key_str;
-            ++keymapEntryCount;
-        }
-
         LOG_INFO("Log", "[CMD_KEYMAP_GET] sending %d keymap entries", keymapEntryCount);
 
         protocol_.sendKeymap(keymapArray, seq);
@@ -2350,163 +2189,6 @@ void MainTask::updateProtocolTcpEndpoint()
     LOG_INFO("Log", "TCP client target=%s:%u", serverIp.toString().c_str(), kTcpPort);
 }
 
-#if ENABLE_EXTENSION_MODULES
-bool MainTask::parseModADataOptimized(const char *input, ModAData &data)
-{
-    // 跳过响应头
-    const char *p = strstr(input, "MODA:");
-    if (!p)
-    {
-        Serial.println("strstr MODA retun error!");
-        return false;
-    }
-    p += 5; // 跳过"MODA:"
-
-    // 解析Slider1
-    if (sscanf(p, "Slider1:[%u][%u][%u],",
-               &data.slider1_range_min,
-               &data.slider1_range_max,
-               &data.slider1_value) != 3)
-    {
-        return false;
-    }
-
-    // 移动到Slider2
-    p = strstr(p, "Slider2:");
-    if (!p)
-        return false;
-    if (sscanf(p, "Slider2:[%u][%u][%u],",
-               &data.slider2_range_min,
-               &data.slider2_range_max,
-               &data.slider2_value) != 3)
-    {
-        return false;
-    }
-
-    // 解析Knob1
-    p = strstr(p, "Knob1:");
-    if (!p)
-        return false;
-    if (sscanf(p, "Knob1:[%hhu][%hhu],",
-               &data.knob1_status,
-               &data.knob1_press) != 2)
-    {
-        return false;
-    }
-
-    // 解析Knob2
-    p = strstr(p, "Knob2:");
-    if (!p)
-        return false;
-    if (sscanf(p, "Knob2:[%hhu][%hhu],",
-               &data.knob2_status,
-               &data.knob2_press) != 2)
-    {
-        return false;
-    }
-
-    // 解析Knob3
-    p = strstr(p, "Knob3:");
-    if (!p)
-        return false;
-    if (sscanf(p, "Knob3:[%hhu][%hhu],",
-               &data.knob3_status,
-               &data.knob3_press) != 2)
-    {
-        return false;
-    }
-
-    // 解析index
-    p = strstr(p, "index=");
-    if (!p)
-        return false;
-    if (sscanf(p, "index=%hhu/over", &data.index) != 1)
-    {
-        return false;
-    }
-
-    return true;
-}
-
-void MainTask::handleModData(String data)
-{
-    if (data.startsWith("[I2C_RESPONSE]MODA:"))
-    {
-        //[I2C_RESPONSE]MODA:Slider1:[0][1000][50],Slider2:[0][1000][150],Knob1:[0][0],Knob2:[0][0],Knob3:[0][0],index=%d/over
-        String temp = data.substring(data.indexOf("MODA:"), data.indexOf("/over"));
-        parseModADataOptimized(temp.c_str(), modAData_);
-        handleModuleKnobInput("KNOB1_LEFT",
-                              "KNOB1_RIGHT",
-                              "KNOB1_CLICK",
-                              modAData_.knob1_status,
-                              modAData_.knob1_press,
-                              lastKnob1Status_,
-                              lastKnob1Press_);
-        handleModuleKnobInput("KNOB2_LEFT",
-                              "KNOB2_RIGHT",
-                              "KNOB2_CLICK",
-                              modAData_.knob2_status,
-                              modAData_.knob2_press,
-                              lastKnob2Status_,
-                              lastKnob2Press_);
-        handleModuleKnobInput("KNOB3_LEFT",
-                              "KNOB3_RIGHT",
-                              "KNOB3_CLICK",
-                              modAData_.knob3_status,
-                              modAData_.knob3_press,
-                              lastKnob3Status_,
-                              lastKnob3Press_);
-        handleSliderInput("SLIDER1_LEFT",
-                          "SLIDER1_RIGHT",
-                          lastSlider1Value_,
-                          slider1AccumulatedDelta_,
-                          modAData_.slider1_value,
-                          modAData_.slider1_range_min,
-                          modAData_.slider1_range_max);
-        handleSliderInput("SLIDER2_LEFT",
-                          "SLIDER2_RIGHT",
-                          lastSlider2Value_,
-                          slider2AccumulatedDelta_,
-                          modAData_.slider2_value,
-                          modAData_.slider2_range_min,
-                          modAData_.slider2_range_max);
-        // LOG_DEBUG("Log", "=== ModAData ===");
-        // LOG_DEBUG("Log", "Slider1: min=%u, max=%u, value=%u\n",
-        //             modAData_.slider1_range_min, modAData_.slider1_range_max, modAData_.slider1_value);
-        // LOG_DEBUG("Log", "Slider2: min=%u, max=%u, value=%u\n",
-        //             modAData_.slider2_range_min, modAData_.slider2_range_max, modAData_.slider2_value);
-        // LOG_DEBUG("Log", "Knob1: status=%u, press=%u\n", modAData_.knob1_status, modAData_.knob1_press);
-        // LOG_DEBUG("Log", "Knob2: status=%u, press=%u\n", modAData_.knob2_status, modAData_.knob2_press);
-        // LOG_DEBUG("Log", "Knob3: status=%u, press=%u\n", modAData_.knob3_status, modAData_.knob3_press);
-        // LOG_DEBUG("Log", "Index: %u\n", modAData_.index);
-        // LOG_DEBUG("Log", "================\n");
-    }
-    else if (data.startsWith("[I2C_RESPONSE]MODB:"))
-    {
-        String temp = data.substring(data.indexOf("MODB:"), data.indexOf("/over"));
-        // LOG_DEBUG("Log", "handleModData temp=%s",temp.c_str());
-        if (temp.startsWith("MODB:Position"))
-        {
-            String temp_position = temp.substring(temp.indexOf("Position=") + sizeof("Position=") - 1);
-            // LOG_DEBUG("Log", "handleModData temp_position=%s",temp_position.c_str());
-            int position = temp_position.toInt();
-            // LOG_DEBUG("Log", "handleModData temp_position=%d",position);
-            static int last_position = 0;
-            // LOG_DEBUG("Log", "handleModData position=%d,last_position=%d",position, last_position);
-            if ((position - last_position) > 0)
-            {
-                handleSpecialInputEvent("MODB_KNOB_RIGHT");
-            }
-            else if ((position - last_position) < 0)
-            {
-                handleSpecialInputEvent("MODB_KNOB_LEFT");
-            }
-            last_position = position;
-        }
-    }
-}
-
-#endif
 
 void MainTask::run()
 {
@@ -2691,28 +2373,9 @@ void MainTask::run()
     protocol_.setKeyEventCallback([this](int physicalKey, int logicalKey, bool pressed)
                                   { onKeyEvent(physicalKey, logicalKey, pressed); });
 
-    // 外接I2C模块配置
-#if ENABLE_EXTENSION_MODULES
-    if (i2cMaster_.begin())
-    {
-        LOG_DEBUG("Log", "I2C Master started successfully");
-    }
-
-    // 外接模块状态初始化
-    status_modA_.mod_type = MODA;
-    status_modA_.status = false;
-    status_modB_.mod_type = MODB;
-    status_modB_.status = false;
-#else
-    LOG_INFO("Extension", "ModA/ModB support disabled at build time");
-#endif
-
     while (1)
     {
         isNeedUpdateDisplay = 0;
-#if ENABLE_EXTENSION_MODULES
-        isNeedI2cRead = 0;
-#endif
         static uint32_t lastHaStatusMs = 0;
         static uint32_t lastHostConnectKickMs = 0;
 
@@ -2811,64 +2474,7 @@ void MainTask::run()
         }
         SendMusicPlayerUpdate(false);
 
-        // 读取I2C外接模块数据
         // todo:增加模块设备配置判断
-#if ENABLE_EXTENSION_MODULES
-        auto devices = i2cMaster_.getDiscoveredDevices();
-        // LOG_DEBUG("Log", "devices.size=%d", devices.size());
-        static uint32_t lastTime = 0;
-        uint32_t nowtTime = millis();
-        // LOG_DEBUG("Log", "nowtTime = %d, lastTime = %d", nowtTime, lastTime);
-        if ((nowtTime - lastTime) > 3000)
-        { // 2000ms
-            lastTime = nowtTime;
-
-            // uint32_t lastTime111 = millis();
-            if (i2cMaster_.scanDevices(MODA_I2C_SLAVE_ADDR))
-            {
-                // LOG_DEBUG("Log", "Devices MODA is connected!!!");
-                status_modA_.status = true;
-                SendModuleStatus(status_modA_);
-            }
-            else
-            {
-                status_modA_.status = false;
-                SendModuleStatus(status_modA_);
-            }
-            // LOG_DEBUG("Log","111111111  TIME=%d", millis() - lastTime111);
-            // uint32_t lastTime222 = millis();
-            if (i2cMaster_.scanDevices(MODB_I2C_SLAVE_ADDR))
-            {
-                // LOG_DEBUG("Log", "Devices MODB is connected!!!");
-                status_modB_.status = true;
-                SendModuleStatus(status_modB_);
-            }
-            else
-            {
-                status_modB_.status = false;
-                SendModuleStatus(status_modB_);
-            }
-            // LOG_DEBUG("Log","222222222  TIME=%d", millis() - lastTime222);
-        }
-
-        static uint32_t lastTime_send = 0;
-        uint32_t nowtTime_send = millis();
-        // 发送命令获取数据
-        if ((nowtTime_send - lastTime_send) > 30)
-        { // 30ms
-            lastTime_send = nowtTime_send;
-            for (auto device : devices)
-            {
-                if (i2cMaster_.sendCommandOnly(device.address, "GETDATA"))
-                {
-                    isNeedI2cRead = true;
-                    // LOG_DEBUG("Log","  isNeedI2cRead = true \r\n");
-                }
-            }
-        }
-
-        // 键盘矩阵
-#endif
 
         uint32_t key_value = 0;
         uint32_t changes = scanner_.scan();
@@ -2921,25 +2527,6 @@ void MainTask::run()
         // if(isNeedUpdateDisplay) {
         // sendDisplayUpdate();
         //}
-
-        // 读取I2C值
-#if ENABLE_EXTENSION_MODULES
-        if (isNeedI2cRead)
-        {
-            for (auto device : devices)
-            {
-                String response = i2cMaster_.readFromDevice(device.address);
-                // LOG_DEBUG("Log","  GETDATA ori response: %s\r\n", response.c_str());
-                if (!response.isEmpty() && (response.startsWith("[I2C_RESPONSE]")))
-                {
-                    // LOG_DEBUG("Log","  GETDATA Response: %s\r\n", response.c_str());
-                    handleModData(response);
-                    response.clear();
-                }
-            }
-        }
-
-#endif
 
         usleep(100);
     }
@@ -3183,21 +2770,6 @@ void MainTask::applyUiSettingsSnapshot(const ui_settings_snapshot_t &requested, 
     }
 }
 
-#if ENABLE_EXTENSION_MODULES
-void MainTask::SendModuleStatus(MODULESTATUS status)
-{
-    DisplayMessage msg;
-    msg.type = uint8_t(MainCommand::MODULE_STATUS);
-    msg.module = status;
-    // 发送消息到显示任务
-    if (message_queue_ != nullptr)
-    {
-        xQueueSend(message_queue_, &msg, portMAX_DELAY);
-    }
-    SendHaStatusSnapshot();
-}
-
-#endif
 
 void MainTask::SendHaStatusUpdate(const HaStatusInfo &status)
 {
@@ -3221,8 +2793,6 @@ void MainTask::SendHaStatusUpdate(const HaStatusInfo &status)
     haStatus["work_mode"] = status.work_mode;
     haStatus["voice_enabled"] = status.voice_enabled;
     haStatus["voice_recording"] = status.voice_recording;
-    haStatus["module_a_connected"] = status.module_a_connected;
-    haStatus["module_b_connected"] = status.module_b_connected;
     haStatus["ip_address"] = status.ip_address;
     haStatus["server_endpoint"] = status.server_endpoint;
     protocol_.sendCustomCommand(CMD_HA_STATUS, 0, statusDoc.as<JsonObject>());
@@ -3238,14 +2808,6 @@ void MainTask::SendHaStatusSnapshot()
     status.work_mode = currentWorkMode_;
     status.voice_enabled = configuration_.settings_.voice_enable;
     status.voice_recording = voiceCaptureActive_;
-#if ENABLE_EXTENSION_MODULES
-    status.module_a_connected = status_modA_.status;
-    status.module_b_connected = status_modB_.status;
-#else
-    status.module_a_connected = false;
-    status.module_b_connected = false;
-#endif
-
     const String ipAddress = status.wifi_connected ? WiFi.localIP().toString() : String("--");
     snprintf(status.ip_address, sizeof(status.ip_address), "%s", ipAddress.c_str());
 

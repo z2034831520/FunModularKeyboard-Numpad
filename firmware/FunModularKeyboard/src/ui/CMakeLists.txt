@@ -9,8 +9,6 @@ SET(SOURCES ui_comp_button5.c
     ui_KeyMappedSecondary.c
     ui_MusicScreen.c
     ui_MusicScreenSecondary.c
-    ui_PcStatusScreen.c
-    ui_PcStatusScreenSecondary.c
     ui_SettingScreen.c
     ui_SettingScreenSecondary.c
     ui_font_BebasNeueFont48.c

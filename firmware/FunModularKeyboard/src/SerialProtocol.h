@@ -21,7 +21,6 @@ enum CommandType
     CMD_HEARTBEAT = 0x0a,
     CMD_FIRMWARE_INFO = 0x0b,
     CMD_VOICE_TEXT = 0x0c,
-    CMD_PC_STATUS = 0x0d,
     CMD_MUSIC_STATUS = 0x0e,
     CMD_MUSIC_CONTROL = 0x0f,
     CMD_PROFILE_STATE = 0x10,

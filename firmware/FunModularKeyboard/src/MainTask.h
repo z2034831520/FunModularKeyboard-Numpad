@@ -283,7 +283,6 @@ private:
     void SendDisplayAction(uint8_t action);
     void SendDisplayKeyInput(uint32_t key_value);
     void SendAsrRecordingState(bool isRecording);
-    void SendPcStatusUpdate(const PcStatusInfo &status);
     void SendHostConnectionUpdate();
     void SendMusicPlayerUpdate(bool force = false);
     void SendBatteryStatusUpdate();

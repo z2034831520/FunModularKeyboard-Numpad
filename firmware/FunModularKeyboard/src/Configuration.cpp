@@ -186,9 +186,6 @@ bool Configuration::load(const char *path)
     const char *voice_baidu_secret_key_str = ini.GetValue("settings", "voice_baidu_secret_key", "");
     settings_.voice_baidu_secret_key = voice_baidu_secret_key_str;
 
-    const char *pc_status_mask_str = ini.GetValue("settings", "pc_status_mask", "0");
-    settings_.pc_status_mask = atoi(pc_status_mask_str);
-
     const char *active_profile_str = ini.GetValue("settings", "active_keymap_profile", "0");
     settings_.active_keymap_profile = static_cast<uint8_t>(atoi(active_profile_str));
     if (settings_.active_keymap_profile >= CONFIG_PROFILE_COUNT)
@@ -459,7 +456,6 @@ bool Configuration::SaveSetting(const char *path)
     ini.SetValue("settings", "voice_cuid", settings_.voice_cuid.c_str());
     ini.SetValue("settings", "voice_baidu_api_key", settings_.voice_baidu_api_key.c_str());
     ini.SetValue("settings", "voice_baidu_secret_key", settings_.voice_baidu_secret_key.c_str());
-    ini.SetValue("settings", "pc_status_mask", String(settings_.pc_status_mask, DEC).c_str());
     ini.SetValue("settings", "active_keymap_profile", String(settings_.active_keymap_profile, DEC).c_str());
 
     // 保存到文件

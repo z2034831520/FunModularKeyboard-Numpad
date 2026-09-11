@@ -1213,7 +1213,6 @@ void MainTask::sendCurrentConfigSnapshot(int seq)
     config["voice_cuid"] = configuration_.settings_.voice_cuid;
     config["voice_baidu_api_key"] = configuration_.settings_.voice_baidu_api_key;
     config["voice_baidu_secret_key"] = configuration_.settings_.voice_baidu_secret_key;
-    config["pc_status_mask"] = configuration_.settings_.pc_status_mask;
     config["active_keymap_profile"] = activeProfile;
     config["active_profile_name"] = Configuration::getProfileDisplayName(activeProfile);
     config["active_profile_has_custom_icon"] = profileIconExists(activeProfile);
@@ -1809,12 +1808,6 @@ int MainTask::parseConfigSetCommand(int seq, JsonObject data)
             settingChanged = true;
             voiceConfigChanged = true;
         }
-        if (config.containsKey("pc_status_mask"))
-        {
-            configuration_.settings_.pc_status_mask = config["pc_status_mask"].as<int>();
-            settingChanged = true;
-        }
-
         if (config.containsKey("active_keymap_profile"))
         {
             const uint8_t newProfile = config["active_keymap_profile"].as<uint8_t>();
@@ -2043,48 +2036,6 @@ void MainTask::onCommandReceived(int cmd, int seq, JsonObject data)
         firmware["version"] = "1.0.0";
         firmware["author"] = "Your Name";
         protocol_.sendFirmwareInfo(firmware, seq);
-        break;
-    }
-
-    case CMD_PC_STATUS:
-    {
-        if (!data.containsKey("pc_status") || !data["pc_status"].is<JsonObject>())
-        {
-            protocol_.sendErrorResponse("Missing pc_status object", 2, seq);
-            break;
-        }
-
-        JsonObject pc = data["pc_status"];
-        String type = pc["type"] | "update";
-
-        if (type == "config")
-        {
-            if (pc.containsKey("mask"))
-            {
-                configuration_.settings_.pc_status_mask = pc["mask"].as<int>();
-                configuration_.SaveSetting();
-            }
-            protocol_.sendSuccessResponse(CMD_PC_STATUS, seq, JsonObject());
-            break;
-        }
-
-        PcStatusInfo status;
-        status.mask = pc["mask"] | static_cast<uint32_t>(configuration_.settings_.pc_status_mask);
-        status.caps_lock = pc["caps_lock"] | false;
-        status.num_lock = pc["num_lock"] | false;
-        status.scroll_lock = pc["scroll_lock"] | false;
-        status.network_connected = pc["network_connected"] | false;
-        status.on_ac_power = pc["on_ac_power"] | false;
-        status.battery_percent = pc["battery_percent"] | -1;
-        status.cpu_usage_percent = pc["cpu_usage_percent"] | -1.0f;
-        status.memory_usage_percent = pc["memory_usage_percent"] | -1.0f;
-        status.cpu_temp_c = pc["cpu_temp_c"] | -1.0f;
-        status.disk_io_percent = pc["disk_io_percent"] | -1.0f;
-        status.network_up_kbps = pc["network_up_kbps"] | -1.0f;
-        status.network_down_kbps = pc["network_down_kbps"] | -1.0f;
-
-        SendPcStatusUpdate(status);
-        protocol_.sendSuccessResponse(CMD_PC_STATUS, seq, JsonObject());
         break;
     }
 
@@ -2558,20 +2509,6 @@ void MainTask::SendAsrRecordingState(bool isRecording)
     if (message_queue_ != nullptr)
     {
         xQueueSend(message_queue_, &msg, portMAX_DELAY);
-    }
-}
-
-void MainTask::SendPcStatusUpdate(const PcStatusInfo &status)
-{
-    DisplayMessage msg;
-    msg.type = uint8_t(MainCommand::PC_STATUS_UPDATE);
-    msg.pc_status = status;
-    if (message_queue_ != nullptr)
-    {
-        if (xQueueSend(message_queue_, &msg, 0) != pdPASS)
-        {
-            LOG_WARNING("Display", "Drop PC_STATUS_UPDATE: display queue full");
-        }
     }
 }
 

@@ -5,23 +5,6 @@
 #include "Mic.h"
 #include "ui/ui_settings_types.h"
 
-struct PcStatusInfo
-{
-    uint32_t mask{0};
-    bool caps_lock{false};
-    bool num_lock{false};
-    bool scroll_lock{false};
-    bool network_connected{false};
-    bool on_ac_power{false};
-    int battery_percent{-1};
-    float cpu_usage_percent{-1.0f};
-    float memory_usage_percent{-1.0f};
-    float cpu_temp_c{-1.0f};
-    float disk_io_percent{-1.0f};
-    float network_up_kbps{-1.0f};
-    float network_down_kbps{-1.0f};
-};
-
 struct MusicPlayerInfo
 {
     bool connected{false};
@@ -53,7 +36,6 @@ struct DisplayMessage
     uint8_t active_profile{0};
     bool asr_recording{false};
     bool host_connected{false};
-    PcStatusInfo pc_status;
     MusicPlayerInfo music_player;
     BatteryStatusInfo battery_status;
     ui_settings_snapshot_t setting;
@@ -80,7 +62,6 @@ enum class MainCommand
     // SPECTRUM_DISPLAY,
     SYSTEM_RESET,
     ASR_RECORDING_STATE,
-    PC_STATUS_UPDATE,
     HOST_CONNECTION_UPDATE,
     MUSIC_PLAYER_UPDATE,
     KEYMAP_PROFILE_UPDATE,

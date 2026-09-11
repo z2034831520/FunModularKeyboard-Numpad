@@ -43,7 +43,6 @@ struct DeviceSettings
     String voice_cuid = "FunModularKeyboard";
     String voice_baidu_api_key = "";
     String voice_baidu_secret_key = "";
-    int pc_status_mask = 0;
     uint8_t active_keymap_profile = 0;
 };
 

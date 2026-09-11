@@ -22,19 +22,6 @@ struct PcStatusInfo
     float network_down_kbps{-1.0f};
 };
 
-struct HaStatusInfo
-{
-    bool wifi_enabled{false};
-    bool wifi_connected{false};
-    int wifi_rssi{-100};
-    bool tcp_connected{false};
-    int work_mode{0};
-    bool voice_enabled{false};
-    bool voice_recording{false};
-    char ip_address[24]{0};
-    char server_endpoint[32]{0};
-};
-
 struct MusicPlayerInfo
 {
     bool connected{false};
@@ -65,8 +52,8 @@ struct DisplayMessage
     uint32_t key_value; // 所有按下按键状态值
     uint8_t active_profile{0};
     bool asr_recording{false};
+    bool host_connected{false};
     PcStatusInfo pc_status;
-    HaStatusInfo ha_status;
     MusicPlayerInfo music_player;
     BatteryStatusInfo battery_status;
     ui_settings_snapshot_t setting;
@@ -94,7 +81,7 @@ enum class MainCommand
     SYSTEM_RESET,
     ASR_RECORDING_STATE,
     PC_STATUS_UPDATE,
-    HA_STATUS_UPDATE,
+    HOST_CONNECTION_UPDATE,
     MUSIC_PLAYER_UPDATE,
     KEYMAP_PROFILE_UPDATE,
     BATTERY_STATUS_UPDATE,

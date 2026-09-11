@@ -665,7 +665,6 @@ void MainTask::updateMusicUiAsrOwnership()
         }
         voiceRecognizer_.suspend();
         asrSuspendedForMusic_ = true;
-        SendHaStatusSnapshot();
         return;
     }
 
@@ -681,7 +680,6 @@ void MainTask::updateMusicUiAsrOwnership()
                 LOG_WARNING("ASR", "VoiceRecognizer resume failed after leaving music UI");
             }
         }
-        SendHaStatusSnapshot();
     }
 }
 
@@ -700,7 +698,6 @@ void MainTask::reconcileVoiceRuntimeState()
             voiceRecognitionBusy_ = false;
         }
         voiceRecognizer_.suspend();
-        SendHaStatusSnapshot();
         return;
     }
 
@@ -724,7 +721,6 @@ void MainTask::reconcileVoiceRuntimeState()
         return;
     }
 
-    SendHaStatusSnapshot();
 }
 
 void MainTask::startVoiceCapture()
@@ -802,7 +798,6 @@ void MainTask::finishVoiceCapture()
 
     voiceCaptureActive_ = false;
     voiceRecognitionBusy_ = false;
-    SendHaStatusSnapshot();
 }
 
 bool MainTask::sendAsciiTextToHost(const String &text)
@@ -1844,7 +1839,7 @@ int MainTask::parseConfigSetCommand(int seq, JsonObject data)
         {
             SendDisplaySetting(configuration_.settings_);
             SendMusicPlayerUpdate(true);
-            SendHaStatusSnapshot();
+            SendHostConnectionUpdate();
         }
         xSemaphoreGive(configuration_.mutex_);
     }
@@ -1864,8 +1859,7 @@ int MainTask::parseConfigSetCommand(int seq, JsonObject data)
         sendCurrentProfileState(0);
         sendCurrentConfigSnapshot(0);
         sendCurrentKeymapSnapshot(0);
-        SendHaStatusSnapshot();
-        SendHaStatusSnapshot();
+        SendHostConnectionUpdate();
     }
 
     return 0;
@@ -2345,7 +2339,7 @@ void MainTask::run()
     // 显示配置更新
     SendDisplaySetting(configuration_.settings_);
     SendMusicPlayerUpdate(true);
-    SendHaStatusSnapshot();
+    SendHostConnectionUpdate();
     SendBatteryStatusUpdate();
     lastBatteryStatusMs_ = millis();
 
@@ -2376,7 +2370,7 @@ void MainTask::run()
     while (1)
     {
         isNeedUpdateDisplay = 0;
-        static uint32_t lastHaStatusMs = 0;
+        static uint32_t lastHostConnectionStatusMs = 0;
         static uint32_t lastHostConnectKickMs = 0;
 
         // MIC读取
@@ -2453,10 +2447,10 @@ void MainTask::run()
                 updateProtocolTcpEndpoint();
             }
         }
-        if (nowMs - lastHaStatusMs >= 2500)
+        if (nowMs - lastHostConnectionStatusMs >= 2500)
         {
-            lastHaStatusMs = nowMs;
-            SendHaStatusSnapshot();
+            lastHostConnectionStatusMs = nowMs;
+            SendHostConnectionUpdate();
         }
         if (musicPlayerState_.connected && lastMusicStatusRxMs_ > 0 && (nowMs - lastMusicStatusRxMs_ > 30000))
         {
@@ -2565,7 +2559,6 @@ void MainTask::SendAsrRecordingState(bool isRecording)
     {
         xQueueSend(message_queue_, &msg, portMAX_DELAY);
     }
-    SendHaStatusSnapshot();
 }
 
 void MainTask::SendPcStatusUpdate(const PcStatusInfo &status)
@@ -2750,7 +2743,7 @@ void MainTask::applyUiSettingsSnapshot(const ui_settings_snapshot_t &requested, 
         speaker_.SetVolume(configuration_.settings_.device_volume / 5);
         SendDisplaySetting(configuration_.settings_);
         SendMusicPlayerUpdate(true);
-        SendHaStatusSnapshot();
+        SendHostConnectionUpdate();
         if (persist)
         {
             configuration_.SaveSetting();
@@ -2771,54 +2764,18 @@ void MainTask::applyUiSettingsSnapshot(const ui_settings_snapshot_t &requested, 
 }
 
 
-void MainTask::SendHaStatusUpdate(const HaStatusInfo &status)
+void MainTask::SendHostConnectionUpdate()
 {
-    DisplayMessage msg;
-    msg.type = uint8_t(MainCommand::HA_STATUS_UPDATE);
-    msg.ha_status = status;
+    DisplayMessage msg{};
+    msg.type = uint8_t(MainCommand::HOST_CONNECTION_UPDATE);
+    msg.host_connected = protocol_.isTcpConnected();
     if (message_queue_ != nullptr)
     {
         if (xQueueSend(message_queue_, &msg, 0) != pdPASS)
         {
-            LOG_WARNING("Display", "Drop HA_STATUS_UPDATE: display queue full");
+            LOG_WARNING("Display", "Drop HOST_CONNECTION_UPDATE: display queue full");
         }
     }
-
-    DynamicJsonDocument statusDoc(384);
-    JsonObject haStatus = statusDoc.createNestedObject("ha_status");
-    haStatus["wifi_enabled"] = status.wifi_enabled;
-    haStatus["wifi_connected"] = status.wifi_connected;
-    haStatus["wifi_rssi"] = status.wifi_rssi;
-    haStatus["tcp_connected"] = status.tcp_connected;
-    haStatus["work_mode"] = status.work_mode;
-    haStatus["voice_enabled"] = status.voice_enabled;
-    haStatus["voice_recording"] = status.voice_recording;
-    haStatus["ip_address"] = status.ip_address;
-    haStatus["server_endpoint"] = status.server_endpoint;
-    protocol_.sendCustomCommand(CMD_HA_STATUS, 0, statusDoc.as<JsonObject>());
-}
-
-void MainTask::SendHaStatusSnapshot()
-{
-    HaStatusInfo status;
-    status.wifi_enabled = configuration_.settings_.wifi_switch;
-    status.wifi_connected = WiFi.status() == WL_CONNECTED;
-    status.wifi_rssi = status.wifi_connected ? WiFi.RSSI() : -100;
-    status.tcp_connected = protocol_.isTcpConnected();
-    status.work_mode = currentWorkMode_;
-    status.voice_enabled = configuration_.settings_.voice_enable;
-    status.voice_recording = voiceCaptureActive_;
-    const String ipAddress = status.wifi_connected ? WiFi.localIP().toString() : String("--");
-    snprintf(status.ip_address, sizeof(status.ip_address), "%s", ipAddress.c_str());
-
-    String endpoint = "OFFLINE";
-    if (status.wifi_connected)
-    {
-        endpoint = WiFi.gatewayIP().toString() + String(":30000");
-    }
-    snprintf(status.server_endpoint, sizeof(status.server_endpoint), "%s", endpoint.c_str());
-
-    SendHaStatusUpdate(status);
 }
 
 // // 添加发送频谱数据的函数

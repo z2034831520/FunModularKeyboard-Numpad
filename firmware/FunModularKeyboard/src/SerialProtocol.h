@@ -25,8 +25,7 @@ enum CommandType
     CMD_MUSIC_STATUS = 0x0e,
     CMD_MUSIC_CONTROL = 0x0f,
     CMD_PROFILE_STATE = 0x10,
-    CMD_PROFILE_ICON_SET = 0x11,
-    CMD_HA_STATUS = 0x12
+    CMD_PROFILE_ICON_SET = 0x11
 };
 // 回调函数类型定义
 // typedef void (*CommandCallback)(int cmd, int seq, JsonObject data);

@@ -37,8 +37,8 @@ void ui_event_PcStatusScreen(lv_event_t * e)
 
     uintptr_t key = (uintptr_t)lv_event_get_param(e);
     if (key == (uintptr_t)LV_KEY_RIGHT) {
-        ui_set_active_screen_tag(UI_SCREEN_HA);
-        _ui_screen_change(&ui_HaScreen, LV_SCR_LOAD_ANIM_NONE, 0, 0, &ui_HaScreen_screen_init);
+        ui_set_active_screen_tag(UI_SCREEN_SETTING);
+        _ui_screen_change(&ui_SettingScreen, LV_SCR_LOAD_ANIM_NONE, 0, 0, &ui_SettingScreen_screen_init);
         lv_refr_now(NULL);
     }
     else if (key == (uintptr_t)LV_KEY_LEFT) {

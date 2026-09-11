@@ -741,18 +741,9 @@ void DisplayTask::UpdateDisplay(const DisplayMessage &msg)
         break;
     }
 
-    case MainCommand::HA_STATUS_UPDATE:
+    case MainCommand::HOST_CONNECTION_UPDATE:
     {
-        ui_MainScreen_set_host_connection(msg.ha_status.tcp_connected);
-        ui_HaScreenSecondary_set_wifi_status(msg.ha_status.wifi_enabled,
-                                             msg.ha_status.wifi_connected,
-                                             msg.ha_status.wifi_rssi,
-                                             msg.ha_status.ip_address);
-        ui_HaScreenSecondary_set_tcp_status(msg.ha_status.tcp_connected,
-                                            msg.ha_status.server_endpoint);
-        ui_HaScreenSecondary_set_mode_status(msg.ha_status.work_mode);
-        ui_HaScreenSecondary_set_voice_status(msg.ha_status.voice_enabled,
-                                              msg.ha_status.voice_recording);
+        ui_MainScreen_set_host_connection(msg.host_connected);
         break;
     }
 

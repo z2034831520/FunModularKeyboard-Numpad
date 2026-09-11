@@ -36,8 +36,6 @@ extern "C" {
 #include "ui_MusicScreenSecondary.h"
 #include "ui_PcStatusScreen.h"
 #include "ui_PcStatusScreenSecondary.h"
-#include "ui_HaScreen.h"
-#include "ui_HaScreenSecondary.h"
 #include "ui_SettingScreen.h"
 #include "ui_SettingScreenSecondary.h"
 

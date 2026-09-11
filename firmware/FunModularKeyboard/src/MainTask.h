@@ -284,8 +284,7 @@ private:
     void SendDisplayKeyInput(uint32_t key_value);
     void SendAsrRecordingState(bool isRecording);
     void SendPcStatusUpdate(const PcStatusInfo &status);
-    void SendHaStatusUpdate(const HaStatusInfo &status);
-    void SendHaStatusSnapshot();
+    void SendHostConnectionUpdate();
     void SendMusicPlayerUpdate(bool force = false);
     void SendBatteryStatusUpdate();
     void updateLocalMusicProgress(uint32_t nowMs);

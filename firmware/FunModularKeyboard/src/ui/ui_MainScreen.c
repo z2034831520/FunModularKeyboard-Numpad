@@ -20,9 +20,6 @@ lv_obj_t * ui_ImageHome = NULL;
 static lv_obj_t * s_ui_MainScreenProfileIconLabel = NULL;
 static lv_obj_t * s_ui_MainScreenProfileIconImage = NULL;
 static lv_obj_t * s_ui_MainScreenProfileName = NULL;
-static lv_obj_t * s_ui_MainScreenHostConnectionIcon = NULL;
-static lv_obj_t * s_ui_MainScreenHostConnectionLabel = NULL;
-static bool s_ui_MainScreenHostConnected = false;
 // lv_obj_t * ui_ImageVolume = NULL;
 // lv_obj_t * ui_ImageWifi = NULL;
 // lv_obj_t * ui_ImagePower = NULL;
@@ -39,24 +36,6 @@ lv_obj_t * ui_line1 = NULL;
 lv_obj_t * ui_line2 = NULL;
 lv_obj_t * ui_line3 = NULL;
 lv_obj_t * ui_line5 = NULL;
-
-static void ui_MainScreen_refresh_host_connection(void)
-{
-    if (s_ui_MainScreenHostConnectionLabel != NULL) {
-        lv_label_set_text(s_ui_MainScreenHostConnectionLabel, s_ui_MainScreenHostConnected ? "PC LINK" : "PC STOP");
-        lv_obj_set_style_text_color(s_ui_MainScreenHostConnectionLabel,
-                                    s_ui_MainScreenHostConnected ? lv_color_hex(0x22C55E) : lv_color_hex(0xF59E0B),
-                                    LV_PART_MAIN | LV_STATE_DEFAULT);
-    }
-
-    if (s_ui_MainScreenHostConnectionIcon != NULL) {
-        lv_label_set_text(s_ui_MainScreenHostConnectionIcon,
-                          s_ui_MainScreenHostConnected ? LV_SYMBOL_REFRESH : LV_SYMBOL_CLOSE);
-        lv_obj_set_style_text_color(s_ui_MainScreenHostConnectionIcon,
-                                    s_ui_MainScreenHostConnected ? lv_color_hex(0x22C55E) : lv_color_hex(0xF59E0B),
-                                    LV_PART_MAIN | LV_STATE_DEFAULT);
-    }
-}
 
 // event funtions
 void ui_event_MainScreen(lv_event_t * e)
@@ -225,30 +204,6 @@ void ui_MainScreen_screen_init(void)
     lv_obj_set_style_text_opa(ui_LabelWorkmode, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(ui_LabelWorkmode, &ui_font_BebasNeueFont24, LV_PART_MAIN | LV_STATE_DEFAULT);
 
-    s_ui_MainScreenHostConnectionLabel = lv_label_create(ui_MainScreen);
-    lv_obj_set_width(s_ui_MainScreenHostConnectionLabel, 108);
-    lv_obj_set_height(s_ui_MainScreenHostConnectionLabel, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(s_ui_MainScreenHostConnectionLabel, -125);
-    lv_obj_set_y(s_ui_MainScreenHostConnectionLabel, -4);
-    lv_obj_set_align(s_ui_MainScreenHostConnectionLabel, LV_ALIGN_CENTER);
-    lv_label_set_text(s_ui_MainScreenHostConnectionLabel, "PC STOP");
-    lv_label_set_long_mode(s_ui_MainScreenHostConnectionLabel, LV_LABEL_LONG_CLIP);
-    lv_obj_set_style_text_align(s_ui_MainScreenHostConnectionLabel, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_opa(s_ui_MainScreenHostConnectionLabel, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(s_ui_MainScreenHostConnectionLabel, &ui_font_BebasNeueFont24, LV_PART_MAIN | LV_STATE_DEFAULT);
-
-    s_ui_MainScreenHostConnectionIcon = lv_label_create(ui_MainScreen);
-    lv_obj_set_width(s_ui_MainScreenHostConnectionIcon, LV_SIZE_CONTENT);   /// 1
-    lv_obj_set_height(s_ui_MainScreenHostConnectionIcon, LV_SIZE_CONTENT);    /// 1
-    lv_obj_set_x(s_ui_MainScreenHostConnectionIcon, -125);
-    lv_obj_set_y(s_ui_MainScreenHostConnectionIcon, 35);
-    lv_obj_set_align(s_ui_MainScreenHostConnectionIcon, LV_ALIGN_CENTER);
-    lv_label_set_text(s_ui_MainScreenHostConnectionIcon, LV_SYMBOL_REFRESH);
-    lv_obj_set_style_text_opa(s_ui_MainScreenHostConnectionIcon, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(s_ui_MainScreenHostConnectionIcon, &lv_font_montserrat_24, LV_PART_MAIN | LV_STATE_DEFAULT);
-
-    ui_MainScreen_refresh_host_connection();
-
     s_ui_MainScreenProfileIconLabel = lv_label_create(ui_MainScreen);
     lv_obj_set_width(s_ui_MainScreenProfileIconLabel, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(s_ui_MainScreenProfileIconLabel, LV_SIZE_CONTENT);    /// 1
@@ -387,11 +342,6 @@ void ui_MainScreen_set_tft_light(char *value) {
     }
 }
 
-void ui_MainScreen_set_host_connection(bool connected) {
-    s_ui_MainScreenHostConnected = connected;
-    ui_MainScreen_refresh_host_connection();
-}
-
 void ui_MainScreen_screen_destroy(void)
 {
     ui_KeyMappedSecondary_bind_main_screen_summary(NULL, NULL, NULL);
@@ -407,8 +357,6 @@ void ui_MainScreen_screen_destroy(void)
     s_ui_MainScreenProfileIconLabel = NULL;
     s_ui_MainScreenProfileIconImage = NULL;
     s_ui_MainScreenProfileName = NULL;
-    s_ui_MainScreenHostConnectionIcon = NULL;
-    s_ui_MainScreenHostConnectionLabel = NULL;    
     // ui_ImageVolume = NULL;
     // ui_ImageWifi = NULL;
     // ui_ImagePower = NULL;

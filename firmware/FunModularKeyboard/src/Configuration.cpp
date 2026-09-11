@@ -159,8 +159,6 @@ bool Configuration::load(const char *path)
     const char *power_mode_str = ini.GetValue("settings", "power_mode", "0");
     settings_.power_mode = atoi(power_mode_str);
 
-    const char *connect_host_str = ini.GetValue("settings", "connect_host", "1");
-    settings_.connect_host = atoi(connect_host_str) != 0;
 
     const char *voice_enable_str = ini.GetValue("settings", "voice_enable", "1");
     settings_.voice_enable = atoi(voice_enable_str);
@@ -447,7 +445,6 @@ bool Configuration::SaveSetting(const char *path)
     ini.SetValue("settings", "tft_brightness", String(settings_.tft_brightness, DEC).c_str());
     ini.SetValue("settings", "device_volume", String(settings_.device_volume, DEC).c_str());
     ini.SetValue("settings", "power_mode", String(settings_.power_mode, DEC).c_str());
-    ini.SetValue("settings", "connect_host", String(settings_.connect_host ? 1 : 0, DEC).c_str());
     ini.SetValue("settings", "voice_enable", String(settings_.voice_enable, DEC).c_str());
     ini.SetValue("settings", "voice_trigger_key", String(settings_.voice_trigger_key, DEC).c_str());
     ini.SetValue("settings", "voice_max_record_ms", String(settings_.voice_max_record_ms, DEC).c_str());

@@ -32,8 +32,6 @@ extern "C" {
 #include "ui_MainScreen.h"
 #include "ui_KeyMapped.h"
 #include "ui_KeyMappedSecondary.h"
-#include "ui_MusicScreen.h"
-#include "ui_MusicScreenSecondary.h"
 #include "ui_SettingScreen.h"
 #include "ui_SettingScreenSecondary.h"
 
@@ -53,7 +51,6 @@ LV_FONT_DECLARE(ui_font_BebasNeueFont86);
 LV_FONT_DECLARE(ui_font_BebasNeueFont36);
 LV_FONT_DECLARE(ui_font_BebasNeueFont14);
 LV_FONT_DECLARE(ui_font_FontCKJGT16);
-LV_FONT_DECLARE(ui_font_FontCKJGT24);
 LV_FONT_DECLARE(ui_font_FontCKJGT28);
 
 // UI INIT

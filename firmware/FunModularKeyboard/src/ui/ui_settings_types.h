@@ -19,7 +19,6 @@ typedef struct {
     int32_t tft_brightness;
     int32_t device_volume;
     int32_t power_mode;
-    bool connect_host;
     bool voice_enable;
     uint8_t active_keymap_profile;
     char rgb_single_color[16];

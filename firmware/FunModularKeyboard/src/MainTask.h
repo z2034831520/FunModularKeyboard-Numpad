@@ -269,25 +269,18 @@ protected:
 private:
     void applyPowerMode(Configuration::POWER_MODE mode);
     void handleKeyEvent(uint32_t key_value);
-    void reportPhysicalKeyEdges(uint32_t edgeMask, bool pressed);
     bool hasMappedOutput(const KeyMapping &mapping) const;
     void triggerMappedInput(const KeyMapping &mapping);
     void updateVoiceTriggerBitFromKeymap();
     void startVoiceCapture();
     void finishVoiceCapture();
-    bool isMusicUiActive() const;
-    void updateMusicUiAsrOwnership();
     void applyVoiceConfig();
     bool sendAsciiTextToHost(const String &text);
     bool sendUtf8TextToCdc(const String &text);
     void SendDisplayAction(uint8_t action);
     void SendDisplayKeyInput(uint32_t key_value);
     void SendAsrRecordingState(bool isRecording);
-    void SendHostConnectionUpdate();
-    void SendMusicPlayerUpdate(bool force = false);
     void SendBatteryStatusUpdate();
-    void updateLocalMusicProgress(uint32_t nowMs);
-    void SendMusicControlCommand(const char *action);
     void SendDisplaySetting(const DeviceSettings &setting);
     void SendKeyMappedProfileUi();
     void sendCurrentProfileState(int seq = 0);
@@ -298,7 +291,6 @@ private:
     void stopWiFiReconnect();
     void processWiFiReconnect(uint32_t nowMs);
     void onWiFiConnected();
-    void updateProtocolTcpEndpoint();
     void StartTimeSync();
     void ProcessTimeSync(uint32_t nowMs);
     bool SyncTimeBeforeBluetoothStart();
@@ -320,7 +312,6 @@ private:
     bool parseKeymapSetValue(Configuration::KEY_TYPE key_type, const String &value, KeyMapping &mapping);
 
     void onCommandReceived(int cmd, int seq, JsonObject data);
-    void onKeyEvent(int physicalKey, int logicalKey, bool pressed);
     MatrixScanner scanner_;
     BatteryMonitor batteryMonitor_;
     std::unique_ptr<IKeyboard> currentKeyboard_{nullptr};
@@ -333,21 +324,15 @@ private:
     SerialProtocol protocol_;
     bool isNeedUpdateDisplay{0};
     uint32_t lastStableKeyState_{0};
-    MusicPlayerInfo musicPlayerState_{};
-    uint32_t lastMusicUiUpdateMs_{0};
-    uint32_t lastMusicStatusRxMs_{0};
-    uint32_t lastMusicProgressTickMs_{0};
     uint32_t lastBatteryStatusMs_{0};
     bool voiceRecognitionBusy_{false};
     bool voiceCaptureActive_{false};
-    bool asrSuspendedForMusic_{false};
     bool voiceRecognizerStarted_{false};
     uint32_t voiceTriggerBit_{1UL << 15};
     bool wifiReconnectActive_{false};
     bool wifiWasConnected_{false};
     uint32_t wifiConnectAttemptStartedMs_{0};
     uint32_t wifiNextRetryAtMs_{0};
-    uint32_t tcpDisconnectedSinceMs_{0};
     bool timeSyncPending_{false};
     uint32_t timeSyncStartedMs_{0};
     uint32_t timeSyncNextCheckMs_{0};
@@ -355,5 +340,4 @@ private:
     bool boost5VPinInitialized_{false};
     bool boost5VEnabled_{true};
     VoiceRecognizer voiceRecognizer_;
-    // AudioAnalyzer audioAnalyzer_;
 };

@@ -8,8 +8,6 @@
 #include "lvgl_setup.h"
 #include "RGBLightControl.h"
 #include "LogManager.h"
-#include "Mic.h"
-#include "AudioAnalyzer.h"
 
 class DisplayTask : public Task<DisplayTask>
 {
@@ -32,18 +30,12 @@ private:
     void UpdateDisplay(const DisplayMessage &msg);
     void CheckWiFiStatus();
     void HexToRGB(const char *hexColor, uint8_t &r, uint8_t &g, uint8_t &b);
-    bool isMusicSpectrumScreenActive() const;
-    void updateSpectrumMicState(bool active);
 
     QueueHandle_t message_queue_;
     DisplayMessage last_message_;
     DisplayMessage msg_;
     RGBLightControl rgbLightControl_;
     ui_settings_snapshot_t disp_setting_;
-    Mic mic_;
-    AudioAnalyzer audioAnalyzer_{SAMPLE_RATE};
-    uint16_t fftIndex_{0};
-    bool spectrumMicActive_{false};
     int wifi_rssi_{-100};
 
     // RSSI (dBm)	信号质量	描述

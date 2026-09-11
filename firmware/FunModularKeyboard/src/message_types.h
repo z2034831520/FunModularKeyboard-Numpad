@@ -5,22 +5,6 @@
 #include "Mic.h"
 #include "ui/ui_settings_types.h"
 
-struct MusicPlayerInfo
-{
-    bool connected{false};
-    bool is_playing{false};
-    bool is_paused{false};
-    bool can_prev{false};
-    bool can_next{false};
-    uint16_t current_seconds{0};
-    uint16_t total_seconds{0};
-    char title[96]{0};
-    char artist[64]{0};
-    char player_name[32]{0};
-    char lyric_current[160]{0};
-    char lyric_next[160]{0};
-};
-
 struct BatteryStatusInfo
 {
     uint16_t voltage_mv{0};
@@ -35,8 +19,6 @@ struct DisplayMessage
     uint32_t key_value; // 所有按下按键状态值
     uint8_t active_profile{0};
     bool asr_recording{false};
-    bool host_connected{false};
-    MusicPlayerInfo music_player;
     BatteryStatusInfo battery_status;
     ui_settings_snapshot_t setting;
     char profile_name[24]{0};
@@ -62,8 +44,6 @@ enum class MainCommand
     // SPECTRUM_DISPLAY,
     SYSTEM_RESET,
     ASR_RECORDING_STATE,
-    HOST_CONNECTION_UPDATE,
-    MUSIC_PLAYER_UPDATE,
     KEYMAP_PROFILE_UPDATE,
     BATTERY_STATUS_UPDATE,
 };

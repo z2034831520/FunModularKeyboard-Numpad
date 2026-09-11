@@ -25,8 +25,8 @@ void ui_event_SettingScreen(lv_event_t * e)
         lv_refr_now(NULL);    
     }
     else if(event_code == LV_EVENT_KEY && key == (uintptr_t)LV_KEY_LEFT) {
-        ui_set_active_screen_tag(UI_SCREEN_MUSIC);
-        _ui_screen_change(&ui_MusicScreen, LV_SCR_LOAD_ANIM_NONE, 0, 0, &ui_MusicScreen_screen_init);
+        ui_set_active_screen_tag(UI_SCREEN_KEYMAPPED);
+        _ui_screen_change(&ui_KeyMapped, LV_SCR_LOAD_ANIM_NONE, 0, 0, &ui_KeyMapped_screen_init);
         lv_refr_now(NULL); 
     } 
     else if(event_code == LV_EVENT_KEY && key == (uintptr_t)LV_KEY_ENTER) {

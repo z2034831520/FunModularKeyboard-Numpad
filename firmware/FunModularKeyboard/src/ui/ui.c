@@ -40,8 +40,6 @@ void ui_init(void)
     ui_KeyMapped_screen_init();
     ui_KeyMappedSecondary_screen_init();
     ui_StatusBar_init();
-    ui_MusicScreen_screen_init();
-    ui_MusicScreenSecondary_screen_init();
     ui_SettingScreen_screen_init();
     ui_SettingScreenSecondary_screen_init();
     
@@ -55,8 +53,6 @@ void ui_destroy(void)
     ui_MainScreen_screen_destroy();
     ui_KeyMapped_screen_destroy();
     ui_KeyMappedSecondary_screen_destroy();
-    ui_MusicScreen_screen_destroy();
-    ui_MusicScreenSecondary_screen_destroy();
     ui_SettingScreen_screen_destroy();
     ui_SettingScreenSecondary_screen_destroy();
 }

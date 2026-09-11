@@ -22,7 +22,6 @@ typedef enum {
     SETTING_ITEM_TFT_BRIGHTNESS,
     SETTING_ITEM_DEVICE_VOLUME,
     SETTING_ITEM_POWER_MODE,
-    SETTING_ITEM_CONNECT_HOST,
     SETTING_ITEM_VOICE_ENABLE,
     SETTING_ITEM_PROFILE,
     SETTING_ITEM_COUNT
@@ -87,7 +86,6 @@ static ui_settings_snapshot_t s_setting_edit = {
     .tft_brightness = 80,
     .device_volume = 50,
     .power_mode = 0,
-    .connect_host = true,
     .voice_enable = true,
     .active_keymap_profile = 0,
     .rgb_single_color = "0"
@@ -114,7 +112,6 @@ static bool setting_secondary_snapshot_equal(const ui_settings_snapshot_t *left,
            left->tft_brightness == right->tft_brightness &&
            left->device_volume == right->device_volume &&
            left->power_mode == right->power_mode &&
-           left->connect_host == right->connect_host &&
            left->voice_enable == right->voice_enable &&
            left->active_keymap_profile == right->active_keymap_profile &&
            setting_secondary_str_equal(left->rgb_single_color, right->rgb_single_color);
@@ -219,7 +216,6 @@ static const char *setting_secondary_item_name(setting_item_id_t item)
         case SETTING_ITEM_TFT_BRIGHTNESS: return "屏幕亮度";
         case SETTING_ITEM_DEVICE_VOLUME: return "设备音量";
         case SETTING_ITEM_POWER_MODE: return "电源模式";
-        case SETTING_ITEM_CONNECT_HOST: return "连接上位机";
         case SETTING_ITEM_VOICE_ENABLE: return "语音输入";
         case SETTING_ITEM_PROFILE: return "键位配置";
         default: return "设置";
@@ -317,9 +313,6 @@ static void setting_secondary_value_text(setting_item_id_t item, char *buffer, s
             break;
         case SETTING_ITEM_POWER_MODE:
             snprintf(buffer, buffer_size, "%s", setting_secondary_power_mode_text(s_setting_edit.power_mode));
-            break;
-        case SETTING_ITEM_CONNECT_HOST:
-            snprintf(buffer, buffer_size, "%s", s_setting_edit.connect_host ? "开启" : "关闭");
             break;
         case SETTING_ITEM_VOICE_ENABLE:
             snprintf(buffer, buffer_size, "%s", s_setting_edit.voice_enable ? "开启" : "关闭");
@@ -492,9 +485,6 @@ static int setting_secondary_adjust_value(setting_item_id_t item, int step)
             s_setting_edit.power_mode = next;
             return 1;
         }
-        case SETTING_ITEM_CONNECT_HOST:
-            s_setting_edit.connect_host = !s_setting_edit.connect_host;
-            return 1;
         case SETTING_ITEM_VOICE_ENABLE:
             s_setting_edit.voice_enable = !s_setting_edit.voice_enable;
             return 1;

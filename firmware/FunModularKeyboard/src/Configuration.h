@@ -22,7 +22,6 @@ struct KeyMapping
 struct DeviceSettings
 {
     bool wifi_switch = 0;  // 0关闭wifi，1连接wifi
-    bool connect_host = 1; // 0不连接上位机，1周期连接上位机TCP服务端
     String wifi_ssid = "";
     String wifi_password = "";
     int work_mode = 0; // enum WORKMODE

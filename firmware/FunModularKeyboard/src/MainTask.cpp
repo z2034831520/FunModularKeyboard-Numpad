@@ -4,12 +4,10 @@
 #include "KeycodeCodec.h"
 #include "SystemTime.h"
 #include "ui/ui.h"
-#include "ui/ui_MusicScreenSecondary.h"
 #include <ctype.h>
 #include <time.h>
 
 #include <WiFi.h>
-#include <WiFiUdp.h>
 #include <mbedtls/base64.h>
 #include "esp_attr.h"
 #include "esp_bt.h"
@@ -262,24 +260,6 @@ bool MainTask::hasMappedOutput(const KeyMapping &mapping) const
     return !mapping.function_key.isEmpty() || mapping.normal_key_count > 0 || mapping.macros_key_count > 0;
 }
 
-void MainTask::reportPhysicalKeyEdges(uint32_t edgeMask, bool pressed)
-{
-    if (edgeMask == 0)
-    {
-        return;
-    }
-
-    for (int i = 0; i < PHYSICAL_KEY_NUM; ++i)
-    {
-        if ((edgeMask & (1UL << i)) == 0)
-        {
-            continue;
-        }
-
-        protocol_.sendInputActivity(i + 1, "", pressed);
-    }
-}
-
 void MainTask::triggerMappedInput(const KeyMapping &mapping)
 {
     if (!currentKeyboard_ || !hasMappedOutput(mapping))
@@ -409,7 +389,6 @@ void MainTask::stopWiFiReconnect()
     timeSyncNextCheckMs_ = 0;
     WiFi.disconnect(true, true);
     WiFi.mode(WIFI_OFF);
-    protocol_.disableTcpClient();
 }
 
 void MainTask::onWiFiConnected()
@@ -417,15 +396,12 @@ void MainTask::onWiFiConnected()
     LOG_INFO("Log", "WiFi connected, IP=%s, RSSI=%d", WiFi.localIP().toString().c_str(), WiFi.RSSI());
     wifiConnectAttemptStartedMs_ = 0;
     wifiNextRetryAtMs_ = 0;
-    updateProtocolTcpEndpoint();
     StartTimeSync();
     reconcileVoiceRuntimeState();
 }
 
 void MainTask::processWiFiReconnect(uint32_t nowMs)
 {
-    constexpr uint32_t kTcpRecoveryWifiResetMs = 15000;
-
     if (!configuration_.settings_.wifi_switch || currentWorkMode_ == Configuration::BLUETOOTH_KEYBOARD_MODE)
     {
         if (wifiWasConnected_ || WiFi.getMode() != WIFI_OFF)
@@ -445,34 +421,7 @@ void MainTask::processWiFiReconnect(uint32_t nowMs)
         if (!wifiWasConnected_)
         {
             wifiWasConnected_ = true;
-            tcpDisconnectedSinceMs_ = 0;
             onWiFiConnected();
-        }
-
-        if (configuration_.settings_.connect_host)
-        {
-            if (protocol_.isTcpConnected())
-            {
-                tcpDisconnectedSinceMs_ = 0;
-            }
-            else if (tcpDisconnectedSinceMs_ == 0)
-            {
-                tcpDisconnectedSinceMs_ = nowMs;
-            }
-            else if (nowMs - tcpDisconnectedSinceMs_ >= kTcpRecoveryWifiResetMs)
-            {
-                LOG_WARNING("Log", "TCP remained disconnected for %u ms, forcing WiFi reconnect", kTcpRecoveryWifiResetMs);
-                protocol_.disableTcpClient();
-                WiFi.disconnect(false, false);
-                wifiWasConnected_ = false;
-                wifiConnectAttemptStartedMs_ = 0;
-                wifiNextRetryAtMs_ = nowMs + kWifiRetryIntervalMs;
-                tcpDisconnectedSinceMs_ = 0;
-            }
-        }
-        else
-        {
-            tcpDisconnectedSinceMs_ = 0;
         }
         return;
     }
@@ -480,8 +429,6 @@ void MainTask::processWiFiReconnect(uint32_t nowMs)
     if (wifiWasConnected_)
     {
         wifiWasConnected_ = false;
-        protocol_.disableTcpClient();
-        tcpDisconnectedSinceMs_ = 0;
         reconcileVoiceRuntimeState();
         LOG_WARNING("Log", "WiFi disconnected, status=%s(%d)", wifiStatusToText(status), status);
     }
@@ -547,7 +494,7 @@ void MainTask::handleKeyEvent(uint32_t key_value)
 
     uint32_t temp_key_value = key_value;
 
-    // 同步给LED进行点击显示
+    // 屏幕反馈不能阻塞 HID 输入路径。
     SendDisplayKeyInput(key_value);
 
     // 先释放所有按键，然后按新按下的键
@@ -645,44 +592,6 @@ void MainTask::applyVoiceConfig()
     voiceRecognizer_.setConfig(cfg);
 }
 
-bool MainTask::isMusicUiActive() const
-{
-    const ui_screen_tag_t tag = ui_get_active_screen_tag();
-    return tag == UI_SCREEN_MUSIC || tag == UI_SCREEN_MUSIC_SECONDARY;
-}
-
-void MainTask::updateMusicUiAsrOwnership()
-{
-    const bool musicUiActive = isMusicUiActive();
-    if (musicUiActive && !asrSuspendedForMusic_)
-    {
-        if (voiceCaptureActive_ || voiceRecognizer_.isCapturing())
-        {
-            SendAsrRecordingState(false);
-            voiceCaptureActive_ = false;
-            voiceRecognitionBusy_ = false;
-            LOG_INFO("ASR", "Suspend voice capture while music UI is active");
-        }
-        voiceRecognizer_.suspend();
-        asrSuspendedForMusic_ = true;
-        return;
-    }
-
-    if (!musicUiActive && asrSuspendedForMusic_)
-    {
-        asrSuspendedForMusic_ = false;
-        if (configuration_.settings_.voice_enable &&
-            currentWorkMode_ == Configuration::WIRED_KEYBOARD_MODE &&
-            WiFi.status() == WL_CONNECTED)
-        {
-            if (!voiceRecognizer_.resume())
-            {
-                LOG_WARNING("ASR", "VoiceRecognizer resume failed after leaving music UI");
-            }
-        }
-    }
-}
-
 void MainTask::reconcileVoiceRuntimeState()
 {
     const bool shouldEnableVoice = configuration_.settings_.voice_enable &&
@@ -698,11 +607,6 @@ void MainTask::reconcileVoiceRuntimeState()
             voiceRecognitionBusy_ = false;
         }
         voiceRecognizer_.suspend();
-        return;
-    }
-
-    if (asrSuspendedForMusic_)
-    {
         return;
     }
 
@@ -726,11 +630,6 @@ void MainTask::reconcileVoiceRuntimeState()
 void MainTask::startVoiceCapture()
 {
     if (voiceRecognitionBusy_)
-    {
-        return;
-    }
-
-    if (asrSuspendedForMusic_)
     {
         return;
     }
@@ -953,28 +852,6 @@ void MainTask::applyPowerMode(Configuration::POWER_MODE mode)
     setBoost5VEnabled(enableBoost5V);
 }
 
-void MainTask::SendMusicPlayerUpdate(bool force)
-{
-    const uint32_t nowMs = millis();
-    if (!force && (nowMs - lastMusicUiUpdateMs_ < 500))
-    {
-        return;
-    }
-    lastMusicUiUpdateMs_ = nowMs;
-
-    DisplayMessage msg{};
-    msg.type = uint8_t(MainCommand::MUSIC_PLAYER_UPDATE);
-    msg.music_player = musicPlayerState_;
-
-    if (message_queue_ != nullptr)
-    {
-        if (xQueueSend(message_queue_, &msg, 0) != pdPASS)
-        {
-            LOG_WARNING("Display", "Drop MUSIC_PLAYER_UPDATE: display queue full");
-        }
-    }
-}
-
 void MainTask::SendBatteryStatusUpdate()
 {
     const BatteryReading reading = batteryMonitor_.read();
@@ -992,57 +869,6 @@ void MainTask::SendBatteryStatusUpdate()
     {
         LOG_WARNING("Display", "Drop BATTERY_STATUS_UPDATE: display queue full");
     }
-}
-
-void MainTask::updateLocalMusicProgress(uint32_t nowMs)
-{
-    if (!musicPlayerState_.connected)
-    {
-        lastMusicProgressTickMs_ = 0;
-        return;
-    }
-
-    if (!musicPlayerState_.is_playing || musicPlayerState_.is_paused || musicPlayerState_.total_seconds == 0)
-    {
-        lastMusicProgressTickMs_ = nowMs;
-        return;
-    }
-
-    if (lastMusicProgressTickMs_ == 0)
-    {
-        lastMusicProgressTickMs_ = nowMs;
-        return;
-    }
-
-    const uint32_t elapsedMs = nowMs - lastMusicProgressTickMs_;
-    if (elapsedMs < 1000)
-    {
-        return;
-    }
-
-    const uint32_t advancedSeconds = elapsedMs / 1000;
-    const uint32_t nextSeconds = min<uint32_t>(musicPlayerState_.total_seconds,
-                                               static_cast<uint32_t>(musicPlayerState_.current_seconds) + advancedSeconds);
-    musicPlayerState_.current_seconds = static_cast<uint16_t>(nextSeconds);
-    lastMusicProgressTickMs_ += advancedSeconds * 1000;
-
-    if (musicPlayerState_.current_seconds >= musicPlayerState_.total_seconds)
-    {
-        lastMusicProgressTickMs_ = nowMs;
-    }
-}
-
-void MainTask::SendMusicControlCommand(const char *action)
-{
-    if (!action || action[0] == '\0')
-    {
-        return;
-    }
-
-    DynamicJsonDocument controlDoc(128);
-    JsonObject control = controlDoc.createNestedObject("music_control");
-    control["action"] = action;
-    protocol_.sendCustomCommand(CMD_MUSIC_CONTROL, 0, controlDoc.as<JsonObject>());
 }
 
 String MainTask::formatKeyMappingDisplay(const KeyMapping &mapping, uint8_t physicalKey) const
@@ -1193,7 +1019,6 @@ void MainTask::sendCurrentConfigSnapshot(int seq)
     JsonObject config = configDoc.to<JsonObject>();
     const uint8_t activeProfile = configuration_.settings_.active_keymap_profile;
     config["wifi_switch"] = configuration_.settings_.wifi_switch;
-    config["connect_host"] = configuration_.settings_.connect_host;
     config["wifi_ssid"] = configuration_.settings_.wifi_ssid;
     config["wifi_password"] = configuration_.settings_.wifi_password;
     config["work_mode"] = configuration_.settings_.work_mode;
@@ -1651,7 +1476,7 @@ int MainTask::parseConfigSetCommand(int seq, JsonObject data)
 
                 if (WiFi.status() == WL_CONNECTED)
                 {
-                    updateProtocolTcpEndpoint();
+                    StartTimeSync();
                 }
                 else
                 {
@@ -1663,21 +1488,6 @@ int MainTask::parseConfigSetCommand(int seq, JsonObject data)
                 stopWiFiReconnect();
                 reconcileVoiceRuntimeState();
                 LOG_DEBUG("Log", "[parseConfigSetCommand] WiFi disconnect!");
-            }
-        }
-
-        if (config.containsKey("connect_host"))
-        {
-            configuration_.settings_.connect_host = config["connect_host"].as<int>() != 0;
-            settingChanged = true;
-
-            if (!configuration_.settings_.connect_host)
-            {
-                protocol_.disableTcpClient();
-            }
-            else if (WiFi.status() == WL_CONNECTED)
-            {
-                updateProtocolTcpEndpoint();
             }
         }
 
@@ -1831,8 +1641,6 @@ int MainTask::parseConfigSetCommand(int seq, JsonObject data)
         if (settingChanged)
         {
             SendDisplaySetting(configuration_.settings_);
-            SendMusicPlayerUpdate(true);
-            SendHostConnectionUpdate();
         }
         xSemaphoreGive(configuration_.mutex_);
     }
@@ -1847,12 +1655,10 @@ int MainTask::parseConfigSetCommand(int seq, JsonObject data)
         configuration_.switchActiveProfile(static_cast<uint8_t>(pendingProfile));
         applyVoiceConfig();
         SendDisplaySetting(configuration_.settings_);
-        SendMusicPlayerUpdate(true);
         SendKeyMappedProfileUi();
         sendCurrentProfileState(0);
         sendCurrentConfigSnapshot(0);
         sendCurrentKeymapSnapshot(0);
-        SendHostConnectionUpdate();
     }
 
     return 0;
@@ -2039,101 +1845,8 @@ void MainTask::onCommandReceived(int cmd, int seq, JsonObject data)
         break;
     }
 
-    case CMD_MUSIC_STATUS:
-    {
-        if (!data.containsKey("music_status") || !data["music_status"].is<JsonObject>())
-        {
-            protocol_.sendErrorResponse("Missing music_status object", 2, seq);
-            break;
-        }
-
-        JsonObject music = data["music_status"];
-        musicPlayerState_.connected = music["connected"] | false;
-        musicPlayerState_.is_playing = music["is_playing"] | false;
-        musicPlayerState_.is_paused = music["is_paused"] | false;
-        musicPlayerState_.can_prev = music["can_prev"] | false;
-        musicPlayerState_.can_next = music["can_next"] | false;
-        musicPlayerState_.current_seconds = (music["position_ms"] | 0) / 1000;
-        musicPlayerState_.total_seconds = (music["duration_ms"] | 0) / 1000;
-
-        String title = music["title"] | "WAITING FOR PLAYER";
-        String artist = music["artist"] | "";
-        String playerName = music["player"] | "PC MUSIC";
-        String lyricCurrent = music["lyric_current"] | "";
-        String lyricNext = music["lyric_next"] | "";
-
-        copyUtf8Truncated(musicPlayerState_.title, sizeof(musicPlayerState_.title), title);
-        copyUtf8Truncated(musicPlayerState_.artist, sizeof(musicPlayerState_.artist), artist);
-        copyUtf8Truncated(musicPlayerState_.player_name, sizeof(musicPlayerState_.player_name), playerName);
-        copyUtf8Truncated(musicPlayerState_.lyric_current, sizeof(musicPlayerState_.lyric_current), lyricCurrent);
-        copyUtf8Truncated(musicPlayerState_.lyric_next, sizeof(musicPlayerState_.lyric_next), lyricNext);
-
-        lastMusicStatusRxMs_ = millis();
-        lastMusicProgressTickMs_ = lastMusicStatusRxMs_;
-        SendMusicPlayerUpdate(true);
-        protocol_.sendSuccessResponse(CMD_MUSIC_STATUS, seq, JsonObject());
-        break;
-    }
     }
 }
-
-void MainTask::onKeyEvent(int physicalKey, int logicalKey, bool pressed)
-{
-    // LOG_DEBUG("Log", "Key: " + String(physicalKey) + " -> " + String(logicalKey) +
-    //                " " + (pressed ? "PRESSED" : "RELEASED"));
-}
-
-void MainTask::updateProtocolTcpEndpoint()
-{
-    constexpr uint16_t kTcpPort = 30000;
-    constexpr uint16_t kDiscoveryPort = 30001;
-    constexpr uint32_t kDiscoveryTimeoutMs = 800;
-
-    if (!configuration_.settings_.connect_host || WiFi.status() != WL_CONNECTED)
-    {
-        protocol_.disableTcpClient();
-        return;
-    }
-
-    // UDP 广播发现服务端 IP
-    IPAddress serverIp;
-    WiFiUDP udp;
-    if (udp.begin(kDiscoveryPort))
-    {
-        const char kDiscoveryMsg[] = "FUNKEYBOARD_DISCOVER";
-        udp.beginPacket(IPAddress(255, 255, 255, 255), kDiscoveryPort);
-        udp.write(reinterpret_cast<const uint8_t *>(kDiscoveryMsg), sizeof(kDiscoveryMsg) - 1);
-        udp.endPacket();
-
-        uint32_t startMs = millis();
-        while (millis() - startMs < kDiscoveryTimeoutMs)
-        {
-            if (udp.parsePacket() >= 8)
-            {
-                char buf[64] = {0};
-                int len = udp.read(buf, sizeof(buf) - 1);
-                if (len > 0 && strstr(buf, "FUNKEYBOARD_HERE"))
-                {
-                    serverIp = udp.remoteIP();
-                    LOG_INFO("Log", "UDP discovery found server at %s", serverIp.toString().c_str());
-                    break;
-                }
-            }
-            delay(10);
-        }
-        udp.stop();
-    }
-
-    if (serverIp == IPAddress(0, 0, 0, 0))
-    {
-        serverIp = IPAddress(192, 168, 31, 1);
-        LOG_INFO("Log", "UDP discovery failed, using fallback IP %s", serverIp.toString().c_str());
-    }
-
-    protocol_.configureTcpClient(serverIp, kTcpPort, true);
-    LOG_INFO("Log", "TCP client target=%s:%u", serverIp.toString().c_str(), kTcpPort);
-}
-
 
 void MainTask::run()
 {
@@ -2220,21 +1933,6 @@ void MainTask::run()
     rotaryEncoder_.Begin();
     rotaryEncoder_.SetCallback([this](uint8_t key)
                                {
-        if (ui_get_active_screen_tag() == UI_SCREEN_MUSIC_SECONDARY) {
-            if (key == LV_KEY_LEFT) {
-                SendMusicControlCommand("previous");
-                return;
-            }
-            if (key == LV_KEY_RIGHT) {
-                SendMusicControlCommand("next");
-                return;
-            }
-            if (key == LV_KEY_ENTER) {
-                SendMusicControlCommand("toggle");
-                return;
-            }
-        }
-
         if (ui_KeyMappedSecondary != NULL && lv_scr_act() == ui_KeyMappedSecondary) {
             if (key == LV_KEY_LEFT) {
                 switchKeymapProfile(-1);
@@ -2260,9 +1958,6 @@ void MainTask::run()
 
     SendKeyMappedProfileUi();
     sendCurrentProfileState(0);
-    snprintf(musicPlayerState_.title, sizeof(musicPlayerState_.title), "%s", "WAITING FOR PLAYER");
-    snprintf(musicPlayerState_.player_name, sizeof(musicPlayerState_.player_name), "%s", "PC MUSIC");
-    SendMusicPlayerUpdate(true);
 
     if (configuration_.settings_.wifi_switch == true)
     {
@@ -2289,8 +1984,6 @@ void MainTask::run()
 
     // 显示配置更新
     SendDisplaySetting(configuration_.settings_);
-    SendMusicPlayerUpdate(true);
-    SendHostConnectionUpdate();
     SendBatteryStatusUpdate();
     lastBatteryStatusMs_ = millis();
 
@@ -2309,20 +2002,14 @@ void MainTask::run()
 
     // 初始化和上位机通信协议
     // protocol_.setCommandCallback(onCommandReceived);
-    // protocol_.setKeyEventCallback(onKeyEvent);
     // protocol_.setLogCallback(onLogMessage);
     // 初始化和上位机通信协议，设置回调函数
     protocol_.setCommandCallback([this](int cmd, int seq, JsonObject data)
                                  { onCommandReceived(cmd, seq, data); });
 
-    protocol_.setKeyEventCallback([this](int physicalKey, int logicalKey, bool pressed)
-                                  { onKeyEvent(physicalKey, logicalKey, pressed); });
-
     while (1)
     {
         isNeedUpdateDisplay = 0;
-        static uint32_t lastHostConnectionStatusMs = 0;
-        static uint32_t lastHostConnectKickMs = 0;
 
         // MIC读取
         //  int16_t samples[BUFFER_SIZE];
@@ -2343,33 +2030,8 @@ void MainTask::run()
         // 保留本地提示音/短音频播放能力。
         speaker_.Loop();
 
-        const uint8_t musicControlRequest = ui_MusicScreenSecondary_consume_control_request();
-        if (musicControlRequest == UI_MUSIC_CONTROL_PREV)
-        {
-            SendMusicControlCommand("previous");
-        }
-        else if (musicControlRequest == UI_MUSIC_CONTROL_TOGGLE)
-        {
-            if (musicPlayerState_.connected)
-            {
-                updateLocalMusicProgress(millis());
-                const bool nextPlayingState = !musicPlayerState_.is_playing;
-                musicPlayerState_.is_playing = nextPlayingState;
-                musicPlayerState_.is_paused = !nextPlayingState;
-                lastMusicStatusRxMs_ = millis();
-                lastMusicProgressTickMs_ = lastMusicStatusRxMs_;
-                SendMusicPlayerUpdate(true);
-            }
-            SendMusicControlCommand("toggle");
-        }
-        else if (musicControlRequest == UI_MUSIC_CONTROL_NEXT)
-        {
-            SendMusicControlCommand("next");
-        }
-
         // 板载EC11用于界面导航。
         rotaryEncoder_.Loop();
-        updateMusicUiAsrOwnership();
 
         // 更新协议处理
         protocol_.update();
@@ -2389,35 +2051,6 @@ void MainTask::run()
         }
         processWiFiReconnect(nowMs);
         ProcessTimeSync(nowMs);
-        updateLocalMusicProgress(nowMs);
-        if (configuration_.settings_.connect_host && WiFi.status() == WL_CONNECTED && !protocol_.isTcpConnected())
-        {
-            if (nowMs - lastHostConnectKickMs >= 3000)
-            {
-                lastHostConnectKickMs = nowMs;
-                updateProtocolTcpEndpoint();
-            }
-        }
-        if (nowMs - lastHostConnectionStatusMs >= 2500)
-        {
-            lastHostConnectionStatusMs = nowMs;
-            SendHostConnectionUpdate();
-        }
-        if (musicPlayerState_.connected && lastMusicStatusRxMs_ > 0 && (nowMs - lastMusicStatusRxMs_ > 30000))
-        {
-            musicPlayerState_.connected = false;
-            musicPlayerState_.is_playing = false;
-            musicPlayerState_.is_paused = false;
-            musicPlayerState_.current_seconds = 0;
-            musicPlayerState_.total_seconds = 0;
-            lastMusicProgressTickMs_ = 0;
-            snprintf(musicPlayerState_.title, sizeof(musicPlayerState_.title), "%s", "PLAYER OFFLINE");
-            musicPlayerState_.artist[0] = '\0';
-            musicPlayerState_.lyric_current[0] = '\0';
-            musicPlayerState_.lyric_next[0] = '\0';
-            SendMusicPlayerUpdate(true);
-        }
-        SendMusicPlayerUpdate(false);
 
         // todo:增加模块设备配置判断
 
@@ -2442,8 +2075,6 @@ void MainTask::run()
             releasedEdges &= ~kSettingsUiOverrideMask;
             host_key_value &= ~kSettingsUiOverrideMask;
         }
-        reportPhysicalKeyEdges(pressedEdges, true);
-        reportPhysicalKeyEdges(releasedEdges, false);
         if (pressedEdges & voiceTriggerBit_)
         {
             startVoiceCapture();
@@ -2485,7 +2116,7 @@ void MainTask::SendDisplayAction(uint8_t action)
     // 发送消息到显示任务
     if (message_queue_ != nullptr)
     {
-        xQueueSend(message_queue_, &msg, portMAX_DELAY);
+        xQueueSend(message_queue_, &msg, 0);
     }
 }
 
@@ -2497,7 +2128,7 @@ void MainTask::SendDisplayKeyInput(uint32_t key_value)
     // 发送消息到显示任务
     if (message_queue_ != nullptr)
     {
-        xQueueSend(message_queue_, &msg, portMAX_DELAY);
+        xQueueSend(message_queue_, &msg, 0);
     }
 }
 
@@ -2524,7 +2155,6 @@ void MainTask::SendDisplaySetting(const DeviceSettings &setting)
     msg.setting.tft_brightness = setting.tft_brightness;
     msg.setting.device_volume = setting.device_volume;
     msg.setting.power_mode = setting.power_mode;
-    msg.setting.connect_host = setting.connect_host;
     msg.setting.voice_enable = setting.voice_enable;
     msg.setting.active_keymap_profile = setting.active_keymap_profile;
     snprintf(msg.setting.rgb_single_color, sizeof(msg.setting.rgb_single_color), "%s", setting.rgb_single_colar.c_str());
@@ -2636,19 +2266,6 @@ void MainTask::applyUiSettingsSnapshot(const ui_settings_snapshot_t &requested, 
             settingChanged = true;
             powerModeChanged = true;
         }
-        if (configuration_.settings_.connect_host != snapshot.connect_host)
-        {
-            configuration_.settings_.connect_host = snapshot.connect_host;
-            settingChanged = true;
-            if (!snapshot.connect_host)
-            {
-                protocol_.disableTcpClient();
-            }
-            else if (WiFi.status() == WL_CONNECTED)
-            {
-                updateProtocolTcpEndpoint();
-            }
-        }
         if (configuration_.settings_.voice_enable != snapshot.voice_enable)
         {
             configuration_.settings_.voice_enable = snapshot.voice_enable;
@@ -2679,8 +2296,6 @@ void MainTask::applyUiSettingsSnapshot(const ui_settings_snapshot_t &requested, 
         reconcileVoiceRuntimeState();
         speaker_.SetVolume(configuration_.settings_.device_volume / 5);
         SendDisplaySetting(configuration_.settings_);
-        SendMusicPlayerUpdate(true);
-        SendHostConnectionUpdate();
         if (persist)
         {
             configuration_.SaveSetting();
@@ -2700,20 +2315,6 @@ void MainTask::applyUiSettingsSnapshot(const ui_settings_snapshot_t &requested, 
     }
 }
 
-
-void MainTask::SendHostConnectionUpdate()
-{
-    DisplayMessage msg{};
-    msg.type = uint8_t(MainCommand::HOST_CONNECTION_UPDATE);
-    msg.host_connected = protocol_.isTcpConnected();
-    if (message_queue_ != nullptr)
-    {
-        if (xQueueSend(message_queue_, &msg, 0) != pdPASS)
-        {
-            LOG_WARNING("Display", "Drop HOST_CONNECTION_UPDATE: display queue full");
-        }
-    }
-}
 
 // // 添加发送频谱数据的函数
 // void MainTask::SendSpectrumDisplay(float* bands, int numBands) {

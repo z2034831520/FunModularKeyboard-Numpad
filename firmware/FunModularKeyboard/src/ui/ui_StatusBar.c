@@ -1,5 +1,6 @@
 #include "ui.h"
 #include "ui_StatusBar.h"
+#include <stdio.h>
 
 
 // 状态栏对象
@@ -63,7 +64,7 @@ void ui_StatusBar_init(void)
     recording_dot = lv_obj_create(status_bar);
     lv_obj_remove_style_all(recording_dot);
     lv_obj_set_size(recording_dot, 20, 20);
-    lv_obj_align(recording_dot, LV_ALIGN_TOP_LEFT, 278, 10);
+    lv_obj_align(recording_dot, LV_ALIGN_TOP_LEFT, 265, 10);
     lv_obj_set_style_radius(recording_dot, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(recording_dot, lv_color_hex(0xFF3030), 0);
     lv_obj_set_style_bg_opa(recording_dot, LV_OPA_COVER, 0);
@@ -78,19 +79,22 @@ void ui_StatusBar_init(void)
     wifi_icon = lv_label_create(status_bar);
     lv_label_set_text(wifi_icon, LV_SYMBOL_WARNING);
     lv_obj_add_style(wifi_icon, &icon_medium_style, 0);  // 小图标
-    lv_obj_align(wifi_icon, LV_ALIGN_TOP_LEFT, 313, 10);
+    lv_obj_align(wifi_icon, LV_ALIGN_TOP_LEFT, 295, 10);
     lv_obj_set_style_text_color(wifi_icon, lv_color_hex(0x808080), 0);
 
     volume_icon = lv_label_create(status_bar);
     lv_label_set_text(volume_icon, LV_SYMBOL_VOLUME_MAX);
     lv_obj_add_style(volume_icon, &icon_medium_style, 0);  // 小图标
-    lv_obj_align(volume_icon, LV_ALIGN_TOP_LEFT, 348, 10);
+    lv_obj_align(volume_icon, LV_ALIGN_TOP_LEFT, 325, 10);
     lv_obj_set_style_text_color(volume_icon, lv_color_hex(0x808080), 0);
 
     battery_icon = lv_label_create(status_bar);
-    lv_label_set_text(battery_icon, LV_SYMBOL_BATTERY_FULL);
-    lv_obj_align(battery_icon, LV_ALIGN_TOP_LEFT, 383, 10);
-    lv_obj_add_style(battery_icon, &icon_medium_style, 0);  // 小图标
+    lv_label_set_text(battery_icon, LV_SYMBOL_BATTERY_EMPTY " --%");
+    lv_obj_set_width(battery_icon, 68);
+    lv_label_set_long_mode(battery_icon, LV_LABEL_LONG_CLIP);
+    lv_obj_set_style_text_align(battery_icon, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_align(battery_icon, LV_ALIGN_TOP_RIGHT, -5, 12);
+    lv_obj_add_style(battery_icon, &icon_small_style, 0);
     lv_obj_set_style_text_color(battery_icon, lv_color_hex(0x808080), 0);
 
 }
@@ -109,11 +113,7 @@ void ui_StatusBar_show(bool show)
 // 更新WiFi信号强度
 void status_bar_set_wifi_strength(int strength)
 {
-    if((strength >= (-60)) && (strength < (-30))) {
-        lv_label_set_text(wifi_icon, LV_SYMBOL_WIFI);
-    } else if((strength >= (-80)) && (strength < (-60))) {
-        lv_label_set_text(wifi_icon, LV_SYMBOL_WIFI);
-    } else if((strength >= (-100)) && (strength < (-80))) {
+    if (strength >= -100 && strength < 0) {
         lv_label_set_text(wifi_icon, LV_SYMBOL_WIFI);
     } else {
         lv_label_set_text(wifi_icon, LV_SYMBOL_WARNING);
@@ -123,24 +123,37 @@ void status_bar_set_wifi_strength(int strength)
 // 更新电池电量
 void status_bar_set_battery_level(uint8_t level)
 {
-    if(level > 80) {
-        lv_label_set_text(battery_icon, LV_SYMBOL_BATTERY_FULL);
-    } else if(level > 50) {
-        lv_label_set_text(battery_icon, LV_SYMBOL_BATTERY_3);
-    } else if(level > 20) {
-        lv_label_set_text(battery_icon, LV_SYMBOL_BATTERY_2);
-    } else if(level > 5) {
-        lv_label_set_text(battery_icon, LV_SYMBOL_BATTERY_1);
-    } else {
-        lv_label_set_text(battery_icon, LV_SYMBOL_BATTERY_EMPTY);
+    if (battery_icon == NULL) {
+        return;
     }
 
-    // 可以添加颜色变化
-    if(level < 20) {
-        lv_obj_set_style_text_color(battery_icon, lv_color_hex(0xFF0000), 0);
-    } else {
-        //lv_obj_set_style_text_color(battery_icon, lv_color_hex(0x00FF00), 0);
+    if (level > 100) {
+        lv_label_set_text(battery_icon, LV_SYMBOL_BATTERY_EMPTY " --%");
         lv_obj_set_style_text_color(battery_icon, lv_color_hex(0x808080), 0);
+        return;
+    }
+
+    const char *symbol = LV_SYMBOL_BATTERY_EMPTY;
+    if (level >= 80) {
+        symbol = LV_SYMBOL_BATTERY_FULL;
+    } else if (level >= 60) {
+        symbol = LV_SYMBOL_BATTERY_3;
+    } else if (level >= 40) {
+        symbol = LV_SYMBOL_BATTERY_2;
+    } else if (level >= 20) {
+        symbol = LV_SYMBOL_BATTERY_1;
+    }
+
+    char battery_text[16] = {0};
+    snprintf(battery_text, sizeof(battery_text), "%s %u%%", symbol, (unsigned)level);
+    lv_label_set_text(battery_icon, battery_text);
+
+    if (level < 20) {
+        lv_obj_set_style_text_color(battery_icon, lv_color_hex(0xEF4444), 0);
+    } else if (level < 50) {
+        lv_obj_set_style_text_color(battery_icon, lv_color_hex(0xF59E0B), 0);
+    } else {
+        lv_obj_set_style_text_color(battery_icon, lv_color_hex(0x22C55E), 0);
     }
 }
 

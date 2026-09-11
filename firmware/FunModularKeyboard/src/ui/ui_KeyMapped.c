@@ -112,7 +112,8 @@ void ui_event_KeyMappedScreen(lv_event_t * e)
             _ui_screen_change(&ui_MainScreen, LV_SCR_LOAD_ANIM_NONE, 0, 0, &ui_MainScreen_screen_init);
             lv_refr_now(NULL);
         } else if (key == (uintptr_t)LV_KEY_RIGHT) {
-            _ui_screen_change(&ui_MusicScreen, LV_SCR_LOAD_ANIM_NONE, 0, 0, &ui_MusicScreen_screen_init);
+            ui_set_active_screen_tag(UI_SCREEN_SETTING);
+            _ui_screen_change(&ui_SettingScreen, LV_SCR_LOAD_ANIM_NONE, 0, 0, &ui_SettingScreen_screen_init);
             lv_refr_now(NULL);
         } else if (key == (uintptr_t)LV_KEY_ENTER) {
             ui_set_active_screen_tag(UI_SCREEN_KEYMAPPED_SECONDARY);

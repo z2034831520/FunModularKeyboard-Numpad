@@ -16,7 +16,6 @@ extern void ui_MainScreen_screen_destroy(void);
 extern void ui_MainScreen_set_work_mode(const char *mode);
 extern void ui_MainScreen_set_rgb_light(char *value);
 extern void ui_MainScreen_set_tft_light(char *value); 
-extern void ui_MainScreen_set_host_connection(bool connected);
 extern void ui_event_MainScreen(lv_event_t * e);
 extern lv_obj_t * ui_MainScreen;
 extern void ui_event_ButtonLeft1(lv_event_t * e);

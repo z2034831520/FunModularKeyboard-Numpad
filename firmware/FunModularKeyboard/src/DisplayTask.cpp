@@ -17,10 +17,6 @@ extern "C"
     const char *lodepng_error_text(unsigned code);
 }
 
-// int32_t samples32_g[BUFFER_SIZE];
-// int16_t samples16_g[BUFFER_SIZE];
-int16_t samples[BUFFER_SIZE];
-
 // // 设置单个数字图片
 // void SetDigitImage(lv_obj_t *img, char digit) {
 //     switch(digit) {
@@ -284,46 +280,6 @@ DisplayTask::DisplayTask(const uint8_t task_core)
 
 DisplayTask::~DisplayTask() {}
 
-bool DisplayTask::isMusicSpectrumScreenActive() const
-{
-    return ui_get_active_screen_tag() == UI_SCREEN_MUSIC_SECONDARY;
-}
-
-void DisplayTask::updateSpectrumMicState(bool active)
-{
-#if defined(ENABLE_VOICE_ASR_MAINTASK)
-    if (active && !spectrumMicActive_)
-    {
-        if (!mic_.Begin())
-        {
-            LOG_WARNING("Display", "Music spectrum mic init failed");
-            return;
-        }
-        for (int i = 0; i < 4; ++i)
-        {
-            mic_.Read(samples, BUFFER_SIZE);
-            delay(5);
-        }
-        spectrumMicActive_ = true;
-        LOG_INFO("Display", "Music spectrum mic acquired");
-        return;
-    }
-
-    if (!active && spectrumMicActive_)
-    {
-        mic_.End();
-        spectrumMicActive_ = false;
-        fftIndex_ = 0;
-        LOG_INFO("Display", "Music spectrum mic released");
-    }
-#else
-    if (active)
-    {
-        spectrumMicActive_ = true;
-    }
-#endif
-}
-
 void DisplayTask::CheckWiFiStatus()
 {
     if (WiFi.status() == WL_CONNECTED)
@@ -389,48 +345,12 @@ void DisplayTask::run()
     status_bar_set_working_mode(WIRED_KEYBOARD_MODE);
     status_bar_set_recording_state(false);
     status_bar_set_volume(5);
-    // Display an empty icon until the first real ADC reading arrives.
-    status_bar_set_battery_level(0);
+    // Display an unknown value until the first real ADC reading arrives.
+    status_bar_set_battery_level(255);
     status_bar_set_wifi_strength(-200);
     // 麦克风
-#if !defined(ENABLE_VOICE_ASR_MAINTASK)
-    delay(100);
-    if (!mic_.Begin())
-    {
-        LOG_DEBUG("Log", "Mic Init Error!");
-        /// delay(1000);
-        /// ESP.restart();  // 重启设备
-    }
-    else
-    {
-        LOG_DEBUG("Log", "Mic Init Sucess!");
-        spectrumMicActive_ = true;
-    }
-    delay(100);
-    // 丢弃前几帧MIC数据（可能包含噪声）
-    for (int i = 0; i < 10; i++)
-    {
-        mic_.Read(samples, BUFFER_SIZE);
-        delay(10);
-    }
-#else
-    LOG_INFO("ASR", "DisplayTask mic analyzer disabled (ENABLE_VOICE_ASR_MAINTASK)");
-#endif
-
-    // 初始化音频分析器
-    audioAnalyzer_.begin();
-
     while (1)
     {
-        const bool spectrumScreenActive = isMusicSpectrumScreenActive();
-        updateSpectrumMicState(spectrumScreenActive);
-
-        // 处理音频数据
-        if (spectrumScreenActive && spectrumMicActive_)
-        {
-            size_t samples_read = mic_.Read(samples, BUFFER_SIZE);
-            if (samples_read >= FFT_SIZE)
-            {
                 // //提取有效数据
                 // for (int i = 0; i < BUFFER_SIZE; i++) {
                 //     // INMP441: 有效数据在 [31:8]
@@ -461,19 +381,11 @@ void DisplayTask::run()
                 //     }
                 // }
                 // 频谱显示
-                audioAnalyzer_.process(samples, samples_read);
-                fftIndex_ = 0;
-                const float *bands = audioAnalyzer_.getBands();
                 // LOG_DEBUG("Log", "bands start:");
                 // for (int i = 0; i < BANDS; i++) {
                 //     LOG_DEBUG("Log", "%.2f ", bands[i]);
                 // }
                 // LOG_DEBUG("Log", "bands end");
-                ui_MusicScreen_drawAudioBandsCool(bands);
-                // ui_MusicScreen_drawAudioBands(bands);
-            }
-        }
-
         // LOG_DEBUG("Log", "Free stack: %u bytes\n", uxTaskGetStackHighWaterMark(NULL));
 
         switch (disp_setting_.rgb_mode)
@@ -656,29 +568,6 @@ void DisplayTask::UpdateDisplay(const DisplayMessage &msg)
         LOG_DEBUG("Battery", "Display voltage: %u mV, level: %u%%",
                   (unsigned)msg.battery_status.voltage_mv,
                   (unsigned)msg.battery_status.percent);
-        break;
-    }
-
-    case MainCommand::HOST_CONNECTION_UPDATE:
-    {
-        ui_MainScreen_set_host_connection(msg.host_connected);
-        break;
-    }
-
-    case MainCommand::MUSIC_PLAYER_UPDATE:
-    {
-        ui_MusicScreenSecondary_set_player_state(msg.music_player.title,
-                                                 msg.music_player.artist,
-                                                 msg.music_player.player_name,
-                                                 msg.music_player.lyric_current,
-                                                 msg.music_player.lyric_next,
-                                                 msg.music_player.connected,
-                                                 msg.music_player.is_playing,
-                                                 msg.music_player.is_paused,
-                                                 msg.music_player.can_prev,
-                                                 msg.music_player.can_next,
-                                                 msg.music_player.current_seconds,
-                                                 msg.music_player.total_seconds);
         break;
     }
 

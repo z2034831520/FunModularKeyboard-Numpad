@@ -7,8 +7,6 @@ SET(SOURCES ui_comp_button5.c
     ui_StatusBar.c
     ui_KeyMapped.c
     ui_KeyMappedSecondary.c
-    ui_MusicScreen.c
-    ui_MusicScreenSecondary.c
     ui_SettingScreen.c
     ui_SettingScreenSecondary.c
     ui_font_BebasNeueFont48.c
@@ -19,7 +17,6 @@ SET(SOURCES ui_comp_button5.c
     ui_font_BebasNeueFont36.c
     ui_font_BebasNeueFont14.c
     ui_font_FontCKJGT16.c
-    ui_font_FontCKJGT24.c
     ui_font_FontCKJGT28.c)
 
 add_library(ui ${SOURCES})

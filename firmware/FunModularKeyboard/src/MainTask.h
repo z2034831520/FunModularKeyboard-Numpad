@@ -13,8 +13,6 @@
 #include "Speaker.h"
 #include "RotaryEncoder.h"
 #include "LogManager.h"
-#include <ArduinoJson.h>
-#include "SerialProtocol.h"
 #include "IKeyboard.h"
 #include "VoiceRecognizer.h"
 #include "BatteryMonitor.h"
@@ -276,14 +274,12 @@ private:
     void finishVoiceCapture();
     void applyVoiceConfig();
     bool sendAsciiTextToHost(const String &text);
-    bool sendUtf8TextToCdc(const String &text);
     void SendDisplayAction(uint8_t action);
     void SendDisplayKeyInput(uint32_t key_value);
     void SendAsrRecordingState(bool isRecording);
     void SendBatteryStatusUpdate();
     void SendDisplaySetting(const DeviceSettings &setting);
     void SendKeyMappedProfileUi();
-    void sendCurrentProfileState(int seq = 0);
     // void SendSpectrumDisplay(float* bands, int numBands);
     // void sendDisplayUpdate();
     bool ConnectToWiFi(const String &ssid, const String &password);
@@ -299,19 +295,7 @@ private:
     bool consumeUiSettingsRequest(ui_settings_snapshot_t &snapshot, bool &persist);
     void applyUiSettingsSnapshot(const ui_settings_snapshot_t &snapshot, bool persist);
     String formatKeyMappingDisplay(const KeyMapping &mapping, uint8_t physicalKey) const;
-    void sendCurrentKeymapSnapshot(int seq = 0);
-    void sendCurrentConfigSnapshot(int seq = 0);
-    bool saveProfileIconFromBase64(uint8_t profileIndex, const String &pngBase64, String &errorMessage);
-    bool removeProfileIcon(uint8_t profileIndex);
     bool profileIconExists(uint8_t profileIndex) const;
-
-    int parseKeymapSetCommand(int seq, JsonObject data);
-    int parseConfigSetCommand(int seq, JsonObject data);
-
-    int parseSingleKeyMapping(JsonObject keyObj);
-    bool parseKeymapSetValue(Configuration::KEY_TYPE key_type, const String &value, KeyMapping &mapping);
-
-    void onCommandReceived(int cmd, int seq, JsonObject data);
     MatrixScanner scanner_;
     BatteryMonitor batteryMonitor_;
     std::unique_ptr<IKeyboard> currentKeyboard_{nullptr};
@@ -321,7 +305,6 @@ private:
     Speaker speaker_;
     // Mic mic_;
     RotaryEncoder rotaryEncoder_;
-    SerialProtocol protocol_;
     bool isNeedUpdateDisplay{0};
     uint32_t lastStableKeyState_{0};
     uint32_t lastBatteryStatusMs_{0};

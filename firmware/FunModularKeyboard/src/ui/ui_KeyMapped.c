@@ -154,7 +154,7 @@ void ui_KeyMapped_screen_init(void)
 
     if (!s_keymapped_icon_style_ready) {
         lv_style_init(&s_keymapped_icon_style);
-        lv_style_set_text_font(&s_keymapped_icon_style, &lv_font_montserrat_48);
+        lv_style_set_text_font(&s_keymapped_icon_style, &lv_font_montserrat_24);
         s_keymapped_icon_style_ready = true;
     }
 

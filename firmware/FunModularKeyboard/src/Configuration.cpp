@@ -191,11 +191,13 @@ bool Configuration::load(const char *path)
         settings_.active_keymap_profile = 0;
     }
 
-    // Parse [key_num] section
-    // int mod_main_key_num = std::stoi(ini.GetValue("key_num", "mod_main_key_num", "22"));
-    // int mod_a_key_num = std::stoi(ini.GetValue("key_num", "mod_main_key_num", "3"));
-    // int mod_b_key_num = std::stoi(ini.GetValue("key_num", "mod_main_key_num", "0"));
-    all_key_num_ = std::stoi(ini.GetValue("key_num", "all_key_num", "16"));
+    // The current hardware has no module A/B keys. Avoid std::stoi here so the
+    // firmware does not require the C++ exception runtime for one integer.
+    all_key_num_ = atoi(ini.GetValue("key_num", "all_key_num", "16"));
+    if (all_key_num_ < 1 || all_key_num_ > CONFIG_ALL_KEY_NUM)
+    {
+        all_key_num_ = 16;
+    }
 
     for (uint8_t i = 0; i < all_key_num_; i++)
     {

@@ -8,7 +8,6 @@
 #include <time.h>
 
 #include <WiFi.h>
-#include <mbedtls/base64.h>
 #include "esp_attr.h"
 #include "esp_bt.h"
 #include "esp_heap_caps.h"
@@ -58,11 +57,6 @@ namespace
         return key;
     }
 
-    String buildKeySequenceString(const uint8_t *keys, uint8_t count)
-    {
-        return buildNamedKeySequence(keys, count);
-    }
-
     bool hasNonAsciiUtf8(const String &text)
     {
         for (size_t i = 0; i < text.length(); ++i)
@@ -73,37 +67,6 @@ namespace
             }
         }
         return false;
-    }
-
-    uint32_t readBigEndian32(const uint8_t *bytes)
-    {
-        return (static_cast<uint32_t>(bytes[0]) << 24U) |
-               (static_cast<uint32_t>(bytes[1]) << 16U) |
-               (static_cast<uint32_t>(bytes[2]) << 8U) |
-               static_cast<uint32_t>(bytes[3]);
-    }
-
-    bool isPng48x48(const uint8_t *bytes, size_t length)
-    {
-        static constexpr uint8_t kPngSignature[8] = {
-            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
-
-        if (bytes == nullptr || length < 24)
-        {
-            return false;
-        }
-        if (memcmp(bytes, kPngSignature, sizeof(kPngSignature)) != 0)
-        {
-            return false;
-        }
-        if (memcmp(bytes + 12, "IHDR", 4) != 0)
-        {
-            return false;
-        }
-
-        const uint32_t width = readBigEndian32(bytes + 16);
-        const uint32_t height = readBigEndian32(bytes + 20);
-        return width == 48 && height == 48;
     }
 
     void copyUtf8Truncated(char *destination, size_t destinationSize, const String &source)
@@ -684,15 +647,15 @@ void MainTask::finishVoiceCapture()
         return;
     }
 
-    if (!sendUtf8TextToCdc(recognizedText))
+    if (hasNonAsciiUtf8(recognizedText))
     {
-        LOG_WARNING("ASR", "CDC output failed for text: %s", recognizedText.c_str());
+        LOG_WARNING("ASR", "Non-ASCII voice text cannot be typed without a host bridge");
     }
 
     // 保留ASCII直打能力作兜底：若上位机未连接且是ASCII文本，尝试HID输入。
-    if (!hasNonAsciiUtf8(recognizedText) && (!currentKeyboard_ || !currentKeyboard_->isConnected()))
+    else if (!sendAsciiTextToHost(recognizedText))
     {
-        sendAsciiTextToHost(recognizedText);
+        LOG_WARNING("ASR", "Voice text HID output failed");
     }
 
     voiceCaptureActive_ = false;
@@ -733,22 +696,6 @@ bool MainTask::sendAsciiTextToHost(const String &text)
         LOG_INFO("ASR", "Voice text typed to host");
     }
     return sentAny;
-}
-
-bool MainTask::sendUtf8TextToCdc(const String &text)
-{
-    if (text.isEmpty())
-    {
-        return false;
-    }
-
-    String sanitized = text;
-    sanitized.replace("\r", " ");
-    sanitized.replace("\n", " ");
-
-    protocol_.sendVoiceText(sanitized, 0);
-    LOG_INFO("ASR", "Voice text forwarded via private protocol");
-    return true;
 }
 
 void MainTask::setWorkMode(Configuration::WORK_MODE mode)
@@ -964,162 +911,9 @@ void MainTask::SendKeyMappedProfileUi()
     }
 }
 
-void MainTask::sendCurrentProfileState(int seq)
-{
-    DynamicJsonDocument profileDoc(512);
-    JsonObject profileState = profileDoc.to<JsonObject>();
-    const uint8_t activeProfile = configuration_.settings_.active_keymap_profile;
-    const bool hasCustomIcon = profileIconExists(activeProfile);
-
-    JsonObject state = profileState.createNestedObject("profile_state");
-    state["active_profile"] = activeProfile;
-    state["profile_number"] = activeProfile + 1;
-    state["profile_name"] = Configuration::getProfileDisplayName(activeProfile);
-    state["has_custom_icon"] = hasCustomIcon;
-    if (hasCustomIcon)
-    {
-        state["icon_path"] = Configuration::getProfileIconPath(activeProfile);
-    }
-
-    protocol_.sendCustomCommand(CMD_PROFILE_STATE, seq, profileState);
-}
-
-void MainTask::sendCurrentKeymapSnapshot(int seq)
-{
-    constexpr size_t kKeymapDocCapacity = 12288;
-    DynamicJsonDocument keymapDoc(kKeymapDocCapacity);
-    JsonArray keymapArray = keymapDoc.to<JsonArray>();
-
-    for (int i = 0; i < CONFIG_ALL_KEY_NUM; i++)
-    {
-        auto function_key_str = configuration_.key_mappings_[i].function_key;
-        String normal_key_str;
-        String macro_str;
-        if (function_key_str.isEmpty())
-        {
-            normal_key_str = buildKeySequenceString(configuration_.key_mappings_[i].normal_key,
-                                                    configuration_.key_mappings_[i].normal_key_count);
-            macro_str = buildKeySequenceString(configuration_.key_mappings_[i].macros_key,
-                                               configuration_.key_mappings_[i].macros_key_count);
-        }
-
-        JsonObject key = keymapArray.createNestedObject();
-        key["physical"] = i + 1;
-        key["normal"] = normal_key_str;
-        key["macro"] = macro_str;
-        key["function"] = function_key_str;
-    }
-
-    protocol_.sendKeymap(keymapArray, seq);
-}
-
-void MainTask::sendCurrentConfigSnapshot(int seq)
-{
-    DynamicJsonDocument configDoc(4096);
-    JsonObject config = configDoc.to<JsonObject>();
-    const uint8_t activeProfile = configuration_.settings_.active_keymap_profile;
-    config["wifi_switch"] = configuration_.settings_.wifi_switch;
-    config["wifi_ssid"] = configuration_.settings_.wifi_ssid;
-    config["wifi_password"] = configuration_.settings_.wifi_password;
-    config["work_mode"] = configuration_.settings_.work_mode;
-    config["rgb_mode"] = configuration_.settings_.rgb_mode;
-    config["rgb_single_colar"] = configuration_.settings_.rgb_single_colar;
-    config["rgb_click_mode"] = configuration_.settings_.rgb_click_mode;
-    config["rgb_brightness"] = configuration_.settings_.rgb_brightness;
-    config["tft_theme"] = configuration_.settings_.tft_theme;
-    config["tft_brightness"] = configuration_.settings_.tft_brightness;
-    config["device_volume"] = configuration_.settings_.device_volume;
-    config["power_mode"] = configuration_.settings_.power_mode;
-    config["voice_enable"] = configuration_.settings_.voice_enable;
-    config["voice_trigger_key"] = configuration_.settings_.voice_trigger_key;
-    config["voice_max_record_ms"] = configuration_.settings_.voice_max_record_ms;
-    config["voice_auto_enter"] = configuration_.settings_.voice_auto_enter;
-    config["voice_dev_pid"] = configuration_.settings_.voice_dev_pid;
-    config["voice_cuid"] = configuration_.settings_.voice_cuid;
-    config["voice_baidu_api_key"] = configuration_.settings_.voice_baidu_api_key;
-    config["voice_baidu_secret_key"] = configuration_.settings_.voice_baidu_secret_key;
-    config["active_keymap_profile"] = activeProfile;
-    config["active_profile_name"] = Configuration::getProfileDisplayName(activeProfile);
-    config["active_profile_has_custom_icon"] = profileIconExists(activeProfile);
-    protocol_.sendConfig(config, seq);
-}
-
 bool MainTask::profileIconExists(uint8_t profileIndex) const
 {
     return SPIFFS.exists(Configuration::getProfileIconPath(profileIndex));
-}
-
-bool MainTask::removeProfileIcon(uint8_t profileIndex)
-{
-    const String path = Configuration::getProfileIconPath(profileIndex);
-    if (!SPIFFS.exists(path))
-    {
-        return true;
-    }
-    return SPIFFS.remove(path);
-}
-
-bool MainTask::saveProfileIconFromBase64(uint8_t profileIndex, const String &pngBase64, String &errorMessage)
-{
-    if (pngBase64.isEmpty())
-    {
-        errorMessage = "png_base64 is empty";
-        return false;
-    }
-
-    if (pngBase64.length() > 14336)
-    {
-        errorMessage = "png_base64 too large";
-        return false;
-    }
-
-    size_t decodedLength = 0;
-    const unsigned char *encoded = reinterpret_cast<const unsigned char *>(pngBase64.c_str());
-    const size_t encodedLength = pngBase64.length();
-    int ret = mbedtls_base64_decode(nullptr, 0, &decodedLength, encoded, encodedLength);
-    if (ret != MBEDTLS_ERR_BASE64_BUFFER_TOO_SMALL || decodedLength == 0)
-    {
-        errorMessage = "base64 length invalid";
-        return false;
-    }
-
-    std::unique_ptr<uint8_t[]> decoded(new uint8_t[decodedLength]);
-    if (!decoded)
-    {
-        errorMessage = "icon buffer alloc failed";
-        return false;
-    }
-
-    ret = mbedtls_base64_decode(decoded.get(), decodedLength, &decodedLength, encoded, encodedLength);
-    if (ret != 0)
-    {
-        errorMessage = "base64 decode failed";
-        return false;
-    }
-    if (!isPng48x48(decoded.get(), decodedLength))
-    {
-        errorMessage = "only 48x48 PNG is supported";
-        return false;
-    }
-
-    const String path = Configuration::getProfileIconPath(profileIndex);
-    File file = SPIFFS.open(path, FILE_WRITE);
-    if (!file)
-    {
-        errorMessage = "open icon file failed";
-        return false;
-    }
-
-    const size_t written = file.write(decoded.get(), decodedLength);
-    file.close();
-    if (written != decodedLength)
-    {
-        SPIFFS.remove(path);
-        errorMessage = "write icon file failed";
-        return false;
-    }
-
-    return true;
 }
 
 bool MainTask::switchKeymapProfile(int delta)
@@ -1141,9 +935,6 @@ bool MainTask::switchKeymapProfile(int delta)
 
     applyVoiceConfig();
     SendKeyMappedProfileUi();
-    sendCurrentProfileState(0);
-    sendCurrentConfigSnapshot(0);
-    sendCurrentKeymapSnapshot(0);
     return true;
 }
 
@@ -1274,580 +1065,6 @@ bool MainTask::SyncTimeBeforeBluetoothStart()
     return synchronized;
 }
 
-int MainTask::parseKeymapSetCommand(int seq, JsonObject data)
-{
-    LOG_DEBUG("Log", "Parsing keymap set command");
-
-    if (!data.containsKey("keymap") || !data["keymap"].is<JsonArray>())
-    {
-        LOG_ERROR("Log", "Invalid keymap data format");
-        return -1;
-    }
-
-    JsonArray keymaps = data["keymap"].as<JsonArray>();
-    int count = 0;
-
-    // 获取互斥锁以确保线程安全
-    if (xSemaphoreTake(configuration_.mutex_, portMAX_DELAY) == pdTRUE)
-    {
-        // // 遍历所有键位映射并重置
-        // for (int i = 0; i < CONFIG_ALL_KEY_NUM; i++) {
-        //     configuration_.key_mappings_[i].normal_key_count = 0;
-        //     configuration_.key_mappings_[i].macros_key_count = 0;
-        //     // 清空数组
-        //     memset(configuration_.key_mappings_[i].normal_key, 0, sizeof(configuration_.key_mappings_[i].normal_key));
-        //     memset(configuration_.key_mappings_[i].macros_key, 0, sizeof(configuration_.key_mappings_[i].macros_key));
-        // }
-
-        for (JsonObject keymap : keymaps)
-        {
-            if (parseSingleKeyMapping(keymap) == 0)
-            {
-                count++;
-            }
-        }
-
-        xSemaphoreGive(configuration_.mutex_);
-    }
-
-    LOG_DEBUG("Log", "Successfully parsed " + String(count) + " key mappings");
-
-    // 保存配置到持久化存储
-    if (count > 0)
-    {
-        if (configuration_.SaveKeyMapping())
-        {
-            LOG_DEBUG("Log", "Key mappings saved to persistent storage");
-        }
-        else
-        {
-            LOG_ERROR("Log", "Failed to save key mappings to persistent storage");
-        }
-    }
-
-    applyVoiceConfig();
-    return count;
-}
-
-bool MainTask::parseKeymapSetValue(Configuration::KEY_TYPE key_type, const String &value, KeyMapping &mapping)
-{
-    if (key_type == Configuration::FUNCTION_KEY)
-    {
-        mapping.function_key = normalizeFunctionKey(value);
-        LOG_INFO("ASR", "Set function key mapping=%s", mapping.function_key.c_str());
-    }
-    else
-    {
-        int pos = 0;
-        while (pos < value.length())
-        {
-            int end_pos = value.indexOf('+', pos);
-            if (end_pos == -1)
-                end_pos = value.length();
-
-            String code_str = value.substring(pos, end_pos);
-            uint8_t keycode = stringToKeycode(code_str.c_str());
-
-            if (key_type == Configuration::NORMAL_KEY)
-            {
-                if (mapping.normal_key_count >= 6)
-                {
-                    LOG_ERROR("Log", "Normal key array overflow! Max 6 keys allowed.");
-                    break;
-                }
-                mapping.normal_key[mapping.normal_key_count] = keycode;
-                mapping.normal_key_count++;
-                mapping.function_key = ""; // 定义了普通键则，清除对应function_key
-            }
-            else if (key_type == Configuration::MACROS_KEY)
-            {
-                if (mapping.macros_key_count >= 5)
-                {
-                    LOG_ERROR("Log", "Macros key array overflow! Max 5 keys allowed.");
-                    break;
-                }
-                mapping.macros_key[mapping.macros_key_count] = keycode;
-                mapping.macros_key_count++;
-            }
-            pos = end_pos + 1;
-        }
-    }
-
-    return true;
-}
-
-int MainTask::parseSingleKeyMapping(JsonObject keyObj)
-{
-    // if (!keyObj.containsKey("physical_key") || !keyObj.containsKey("normal")
-    //     || !keyObj.containsKey("macro") || !keyObj.containsKey("function")) {
-    //     LOG_ERROR("Log","Invalid key mapping object");
-    //     return -1;
-    // }
-
-    KeyMapping *targetMapping = nullptr;
-
-    if (keyObj["physical"].is<int>())
-    {
-        int physicalKey_index = keyObj["physical"].as<int>() - 1;
-        if (physicalKey_index < 0 || physicalKey_index >= CONFIG_ALL_KEY_NUM)
-        {
-            LOG_ERROR("Log", "Physical key out of range:%d ", physicalKey_index);
-            return -1;
-        }
-        targetMapping = &configuration_.key_mappings_[physicalKey_index];
-    }
-    else
-    {
-        LOG_ERROR("Log", "Invalid key mapping target");
-        return -1;
-    }
-
-    KeyMapping &keymapping = *targetMapping;
-
-    // 清空数组
-    keymapping.normal_key_count = 0;
-    keymapping.macros_key_count = 0;
-    memset(keymapping.normal_key, 0, sizeof(keymapping.normal_key));
-    memset(keymapping.macros_key, 0, sizeof(keymapping.macros_key));
-
-    // 解析普通键 (normal)
-    String normalStr = keyObj["normal"];
-    LOG_ERROR("Log", "parseSingleKeyMapping normalStr:%s ", normalStr.c_str());
-
-    if (normalStr && strlen(normalStr.c_str()) > 0)
-    {
-        parseKeymapSetValue(Configuration::NORMAL_KEY, normalStr, keymapping);
-    }
-
-    // 解析宏键 (macro)
-    String macroStr = keyObj["macro"];
-    if (macroStr && strlen(macroStr.c_str()) > 0)
-    {
-        parseKeymapSetValue(Configuration::MACROS_KEY, macroStr, keymapping);
-    }
-
-    // 解析功能键 (function)
-    String functionStr = keyObj["function"];
-    if (functionStr && (strlen(functionStr.c_str()) > 0) && (!functionStr.equals("0")))
-    {
-        parseKeymapSetValue(Configuration::FUNCTION_KEY, functionStr, keymapping);
-    }
-
-    // LOG_WARNING("Log","physicalKey_index=%d,normal_key_count=%d,macros_key_count=%d",
-    //     physicalKey_index ,keymapping.normal_key_count,keymapping.macros_key_count);
-
-    return 0;
-}
-
-int MainTask::parseConfigSetCommand(int seq, JsonObject data)
-{
-    LV_UNUSED(seq);
-
-    if (!data.containsKey("config") || !data["config"].is<JsonObject>())
-    {
-        LOG_ERROR("Log", "Invalid config data format");
-        return -1;
-    }
-
-    // 获取互斥锁以确保线程安全
-    int pendingProfile = -1;
-    bool powerModeChanged = false;
-
-    if (xSemaphoreTake(configuration_.mutex_, portMAX_DELAY) == pdTRUE)
-    {
-        JsonObject config = data["config"];
-        bool settingChanged = false;
-        bool voiceConfigChanged = false;
-
-        if (config.containsKey("wifi_switch"))
-        {
-            configuration_.settings_.wifi_switch = config["wifi_switch"];
-            settingChanged = true;
-
-            if (configuration_.settings_.wifi_switch == true)
-            {
-                if (config.containsKey("wifi_ssid") && config.containsKey("wifi_password"))
-                {
-                    configuration_.settings_.wifi_ssid = config["wifi_ssid"].as<String>();
-                    configuration_.settings_.wifi_password = config["wifi_password"].as<String>();
-                    settingChanged = true;
-                    scheduleWiFiConnectAttempt(true);
-                }
-
-                if (WiFi.status() == WL_CONNECTED)
-                {
-                    StartTimeSync();
-                }
-                else
-                {
-                    scheduleWiFiConnectAttempt(true);
-                }
-            }
-            else
-            {
-                stopWiFiReconnect();
-                reconcileVoiceRuntimeState();
-                LOG_DEBUG("Log", "[parseConfigSetCommand] WiFi disconnect!");
-            }
-        }
-
-        if (config.containsKey("work_mode"))
-        {
-            int new_work_mode = config["work_mode"];
-            if (new_work_mode >= Configuration::WIRED_KEYBOARD_MODE &&
-                new_work_mode <= Configuration::WIRELESS_2_4G_KEYBOARD_MODE)
-            {
-                setWorkMode(static_cast<Configuration::WORK_MODE>(new_work_mode));
-                configuration_.settings_.work_mode = new_work_mode;
-                settingChanged = true;
-            }
-        }
-
-        if (config.containsKey("rgb_single_colar"))
-        {
-            configuration_.settings_.rgb_single_colar = config["rgb_single_colar"].as<String>();
-            settingChanged = true;
-        }
-
-        if (config.containsKey("rgb_mode"))
-        {
-            int new_rgb_mode = config["rgb_mode"];
-            // if (newMode >= Configuration::RGB_CLICK_MODE &&
-            //     newMode <= Configuration::RGB_PULSE_MODE) {
-            // setWorkMode(static_cast<Configuration::WORK_MODE>(newMode));
-            configuration_.settings_.rgb_mode = new_rgb_mode;
-            settingChanged = true;
-            // }
-        }
-
-        if (config.containsKey("rgb_click_mode"))
-        {
-            int new_rgb_click_mode = config["rgb_click_mode"];
-            // if (newMode >= Configuration::RGB_CLICK_MODE &&
-            //     newMode <= Configuration::RGB_PULSE_MODE) {
-            // setWorkMode(static_cast<Configuration::WORK_MODE>(newMode));
-            configuration_.settings_.rgb_click_mode = new_rgb_click_mode;
-            settingChanged = true;
-            // }
-        }
-
-        if (config.containsKey("rgb_brightness"))
-        {
-            configuration_.settings_.rgb_brightness = config["rgb_brightness"];
-            settingChanged = true;
-        }
-
-        if (config.containsKey("tft_theme"))
-        {
-            configuration_.settings_.tft_theme = config["tft_theme"];
-            settingChanged = true;
-        }
-
-        if (config.containsKey("tft_brightness"))
-        {
-            configuration_.settings_.tft_brightness = constrain(static_cast<int>(config["tft_brightness"]), 5, 100);
-            settingChanged = true;
-        }
-
-        if (config.containsKey("device_volume"))
-        {
-            configuration_.settings_.device_volume = config["device_volume"];
-            settingChanged = true;
-            // 设置喇叭音量
-            speaker_.SetVolume(configuration_.settings_.device_volume / 5); // 0~21
-        }
-
-        if (config.containsKey("power_mode"))
-        {
-            int new_power_mode = constrain(static_cast<int>(config["power_mode"]),
-                                           static_cast<int>(Configuration::NORMAL_POWER_MODE),
-                                           static_cast<int>(Configuration::DEEPSLEEP_POWER_MODE));
-            if (configuration_.settings_.power_mode != new_power_mode)
-            {
-                configuration_.settings_.power_mode = new_power_mode;
-                settingChanged = true;
-                powerModeChanged = true;
-            }
-        }
-
-        if (config.containsKey("voice_enable"))
-        {
-            configuration_.settings_.voice_enable = config["voice_enable"];
-            settingChanged = true;
-            voiceConfigChanged = true;
-        }
-        if (config.containsKey("voice_trigger_key"))
-        {
-            configuration_.settings_.voice_trigger_key = config["voice_trigger_key"];
-            settingChanged = true;
-            voiceConfigChanged = true;
-        }
-        if (config.containsKey("voice_max_record_ms"))
-        {
-            configuration_.settings_.voice_max_record_ms = config["voice_max_record_ms"];
-            settingChanged = true;
-            voiceConfigChanged = true;
-        }
-        if (config.containsKey("voice_auto_enter"))
-        {
-            configuration_.settings_.voice_auto_enter = config["voice_auto_enter"];
-            settingChanged = true;
-            voiceConfigChanged = true;
-        }
-        if (config.containsKey("voice_dev_pid"))
-        {
-            configuration_.settings_.voice_dev_pid = config["voice_dev_pid"];
-            settingChanged = true;
-            voiceConfigChanged = true;
-        }
-        if (config.containsKey("voice_cuid"))
-        {
-            configuration_.settings_.voice_cuid = config["voice_cuid"].as<String>();
-            settingChanged = true;
-            voiceConfigChanged = true;
-        }
-        if (config.containsKey("voice_baidu_api_key"))
-        {
-            configuration_.settings_.voice_baidu_api_key = config["voice_baidu_api_key"].as<String>();
-            settingChanged = true;
-            voiceConfigChanged = true;
-        }
-        if (config.containsKey("voice_baidu_secret_key"))
-        {
-            configuration_.settings_.voice_baidu_secret_key = config["voice_baidu_secret_key"].as<String>();
-            settingChanged = true;
-            voiceConfigChanged = true;
-        }
-        if (config.containsKey("active_keymap_profile"))
-        {
-            const uint8_t newProfile = config["active_keymap_profile"].as<uint8_t>();
-            if (newProfile < CONFIG_PROFILE_COUNT && newProfile != configuration_.settings_.active_keymap_profile)
-            {
-                settingChanged = true;
-                voiceConfigChanged = true;
-                pendingProfile = static_cast<int>(newProfile);
-            }
-        }
-
-        if (voiceConfigChanged)
-        {
-            applyVoiceConfig();
-        }
-        if (settingChanged || voiceConfigChanged)
-        {
-            reconcileVoiceRuntimeState();
-        }
-
-        if (settingChanged)
-        {
-            SendDisplaySetting(configuration_.settings_);
-        }
-        xSemaphoreGive(configuration_.mutex_);
-    }
-
-    if (powerModeChanged)
-    {
-        applyPowerMode(static_cast<Configuration::POWER_MODE>(configuration_.settings_.power_mode));
-    }
-
-    if (pendingProfile >= 0)
-    {
-        configuration_.switchActiveProfile(static_cast<uint8_t>(pendingProfile));
-        applyVoiceConfig();
-        SendDisplaySetting(configuration_.settings_);
-        SendKeyMappedProfileUi();
-        sendCurrentProfileState(0);
-        sendCurrentConfigSnapshot(0);
-        sendCurrentKeymapSnapshot(0);
-    }
-
-    return 0;
-}
-
-void MainTask::onCommandReceived(int cmd, int seq, JsonObject data)
-{
-    // LOG_WARNING("Log", "Command received: " + String(cmd) + ", seq: " + String(seq));
-
-    switch (cmd)
-    {
-    case CMD_DEVICE_INFO_GET:
-    {
-        DynamicJsonDocument deviceinfoDoc(128);
-        JsonObject deviceinfo = deviceinfoDoc.to<JsonObject>();
-        deviceinfo["device_name"] = "FunModularKeyBoard";
-        deviceinfo["device_id"] = "FMB001";
-        deviceinfo["firmware_version"] = "1.0.1";
-        protocol_.sendDeviceInfo(deviceinfo, seq);
-        break;
-    }
-    case CMD_KEYMAP_GET:
-    {
-        constexpr size_t kKeymapDocCapacity = 12288;
-        DynamicJsonDocument keymapDoc(kKeymapDocCapacity);
-        JsonArray keymapArray = keymapDoc.to<JsonArray>();
-        int keymapEntryCount = 0;
-
-        // JsonObject key1 = keymapArray.createNestedObject();
-        // key1["physical"] = 1;
-        // key1["logical"] = 'A';
-
-        // JsonObject key2 = keymapArray.createNestedObject();
-        // key2["physical"] = 2;
-        // key2["logical"] = 'B';
-
-        for (int i = 0; i < CONFIG_ALL_KEY_NUM; i++)
-        {
-            auto function_key_str = configuration_.key_mappings_[i].function_key;
-            String normal_key_str;
-            String macro_str;
-            if (function_key_str.isEmpty())
-            {
-                normal_key_str = buildKeySequenceString(configuration_.key_mappings_[i].normal_key,
-                                                        configuration_.key_mappings_[i].normal_key_count);
-                macro_str = buildKeySequenceString(configuration_.key_mappings_[i].macros_key,
-                                                   configuration_.key_mappings_[i].macros_key_count);
-            }
-            else
-            {
-                LOG_DEBUG("Log", "[CMD_KEYMAP_GET] physical = %d, function_key_str=%s", i + 1, function_key_str.c_str());
-            }
-
-            JsonObject key = keymapArray.createNestedObject();
-            if (key.isNull())
-            {
-                LOG_ERROR("Log", "[CMD_KEYMAP_GET] JSON capacity exhausted at physical key %d (capacity=%u)",
-                          i + 1,
-                          static_cast<unsigned>(kKeymapDocCapacity));
-                break;
-            }
-            key["physical"] = i + 1;
-            key["normal"] = normal_key_str;
-            key["macro"] = macro_str;
-            key["function"] = function_key_str;
-            ++keymapEntryCount;
-        }
-
-        LOG_INFO("Log", "[CMD_KEYMAP_GET] sending %d keymap entries", keymapEntryCount);
-
-        protocol_.sendKeymap(keymapArray, seq);
-        break;
-    }
-
-    case CMD_KEYMAP_SET:
-        if (data.containsKey("keymap"))
-        {
-            // 处理按键映射设置
-            if (parseKeymapSetCommand(seq, data) > 0)
-            {
-                configuration_.SaveKeyMapping();
-                SendKeyMappedProfileUi();
-                protocol_.sendSuccessResponse(CMD_KEYMAP_SET, seq, JsonObject());
-            }
-            else
-            {
-                LOG_ERROR("Log", "CMD_KEYMAP_SET set error");
-            }
-        }
-        break;
-
-    case CMD_CONFIG_GET:
-    {
-        sendCurrentConfigSnapshot(seq);
-        break;
-    }
-
-    case CMD_CONFIG_SET:
-        if (data.containsKey("config"))
-        {
-            if (parseConfigSetCommand(seq, data) >= 0)
-            {
-                configuration_.SaveSetting();
-                protocol_.sendSuccessResponse(CMD_CONFIG_SET, seq, JsonObject());
-            }
-            else
-            {
-                LOG_ERROR("Log", "CMD_CONFIG_SET set error");
-            }
-        }
-        break;
-
-    case CMD_PROFILE_STATE:
-        sendCurrentProfileState(seq);
-        break;
-
-    case CMD_PROFILE_ICON_SET:
-    {
-        if (!data.containsKey("profile_icon") || !data["profile_icon"].is<JsonObject>())
-        {
-            protocol_.sendErrorResponse("Missing profile_icon object", 2, seq);
-            break;
-        }
-
-        JsonObject icon = data["profile_icon"];
-        const uint8_t requestedProfile = icon["profile"] | configuration_.settings_.active_keymap_profile;
-        if (requestedProfile >= CONFIG_PROFILE_COUNT)
-        {
-            protocol_.sendErrorResponse("profile out of range", 3, seq);
-            break;
-        }
-
-        String errorMessage;
-        bool success = false;
-        const bool clearIcon = icon["clear"] | false;
-        if (clearIcon)
-        {
-            success = removeProfileIcon(requestedProfile);
-            if (!success)
-            {
-                errorMessage = "remove icon failed";
-            }
-        }
-        else if (icon.containsKey("png_base64") && icon["png_base64"].is<const char *>())
-        {
-            success = saveProfileIconFromBase64(requestedProfile,
-                                                icon["png_base64"].as<String>(),
-                                                errorMessage);
-        }
-        else
-        {
-            errorMessage = "png_base64 missing";
-        }
-
-        if (!success)
-        {
-            protocol_.sendErrorResponse(errorMessage, 4, seq);
-            break;
-        }
-
-        DynamicJsonDocument responseDoc(384);
-        JsonObject response = responseDoc.to<JsonObject>();
-        response["profile"] = requestedProfile;
-        response["profile_number"] = requestedProfile + 1;
-        response["has_custom_icon"] = profileIconExists(requestedProfile);
-        response["profile_name"] = Configuration::getProfileDisplayName(requestedProfile);
-        protocol_.sendSuccessResponse(CMD_PROFILE_ICON_SET, seq, response);
-
-        if (requestedProfile == configuration_.settings_.active_keymap_profile)
-        {
-            SendKeyMappedProfileUi();
-        }
-        sendCurrentProfileState(0);
-        break;
-    }
-
-    case CMD_FIRMWARE_INFO:
-    {
-        DynamicJsonDocument firmwareDoc(128);
-        JsonObject firmware = firmwareDoc.to<JsonObject>();
-        firmware["version"] = "1.0.0";
-        firmware["author"] = "Your Name";
-        protocol_.sendFirmwareInfo(firmware, seq);
-        break;
-    }
-
-    }
-}
-
 void MainTask::run()
 {
 
@@ -1856,9 +1073,6 @@ void MainTask::run()
     applyPowerMode(static_cast<Configuration::POWER_MODE>(configuration_.settings_.power_mode));
 
     batteryMonitor_.begin();
-
-    // 初始化协议
-    protocol_.begin(115200);
 
     // 获取按键的映射
     for (int i = 1; i <= CONFIG_ALL_KEY_NUM; i++)
@@ -1957,7 +1171,6 @@ void MainTask::run()
         this->SendDisplayAction(key); });
 
     SendKeyMappedProfileUi();
-    sendCurrentProfileState(0);
 
     if (configuration_.settings_.wifi_switch == true)
     {
@@ -2001,12 +1214,6 @@ void MainTask::run()
     speaker_.PlayLocalAudio("/coin2.wav");
 
     // 初始化和上位机通信协议
-    // protocol_.setCommandCallback(onCommandReceived);
-    // protocol_.setLogCallback(onLogMessage);
-    // 初始化和上位机通信协议，设置回调函数
-    protocol_.setCommandCallback([this](int cmd, int seq, JsonObject data)
-                                 { onCommandReceived(cmd, seq, data); });
-
     while (1)
     {
         isNeedUpdateDisplay = 0;
@@ -2032,9 +1239,6 @@ void MainTask::run()
 
         // 板载EC11用于界面导航。
         rotaryEncoder_.Loop();
-
-        // 更新协议处理
-        protocol_.update();
 
         ui_settings_snapshot_t pendingSettings{};
         bool persistUiSettings = false;
@@ -2299,19 +1503,15 @@ void MainTask::applyUiSettingsSnapshot(const ui_settings_snapshot_t &requested, 
         if (persist)
         {
             configuration_.SaveSetting();
-            sendCurrentConfigSnapshot(0);
         }
     }
     else if (persist)
     {
         configuration_.SaveSetting();
-        sendCurrentConfigSnapshot(0);
     }
     if (keymapProfileChanged)
     {
         SendKeyMappedProfileUi();
-        sendCurrentProfileState(0);
-        sendCurrentKeymapSnapshot(0);
     }
 }
 

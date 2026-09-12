@@ -5,6 +5,14 @@
 #include <vector>
 #include <functional>
 
+/*
+ * Compile-time log filtering. Production builds keep warnings and errors,
+ * while verbose DEBUG/INFO messages and their format strings are omitted.
+ */
+#ifndef LOG_COMPILE_LEVEL
+#define LOG_COMPILE_LEVEL 2
+#endif
+
 // 日志级别定义
 enum class LogLevel
 {
@@ -112,8 +120,18 @@ private:
 };
 
 // 全局便捷函数（简化栈检查，避免过度保护）
+#if LOG_COMPILE_LEVEL <= 0
 #define LOG_DEBUG(tag, ...) LogManager::getInstance().debug(tag, __VA_ARGS__)
+#else
+#define LOG_DEBUG(tag, ...) ((void)0)
+#endif
+
+#if LOG_COMPILE_LEVEL <= 1
 #define LOG_INFO(tag, ...) LogManager::getInstance().info(tag, __VA_ARGS__)
+#else
+#define LOG_INFO(tag, ...) ((void)0)
+#endif
+
 #define LOG_WARNING(tag, ...) LogManager::getInstance().warning(tag, __VA_ARGS__)
 #define LOG_ERROR(tag, ...) LogManager::getInstance().error(tag, __VA_ARGS__)
 #define LOG_CRITICAL(tag, ...) LogManager::getInstance().critical(tag, __VA_ARGS__)

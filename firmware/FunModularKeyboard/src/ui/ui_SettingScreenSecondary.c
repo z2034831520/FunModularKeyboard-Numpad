@@ -57,7 +57,7 @@ static const setting_color_preset_t k_setting_color_presets[] = {
     {"20", "ff00ff", "品红"},
     {"21", "ff00bf", "玫红"},
     {"22", "ff0080", "粉红"},
-    {"23", "ff0040", "绯红"}
+    {"23", "ff0040", "深红"}
 };
 
 lv_obj_t * ui_SettingScreenSecondary = NULL;

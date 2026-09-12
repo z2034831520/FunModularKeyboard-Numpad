@@ -12,18 +12,18 @@
 #define LV_FONT_MONTSERRAT_48 0
 
 /*
- * The generated UI only creates base objects, buttons, images and labels.
+ * The time-only UI creates base objects and labels.
  * Disable the unused widget families so the default theme cannot pull their
  * implementations into the firmware image.
  */
 #define LV_USE_ARC 0
 #define LV_USE_BAR 0
-#define LV_USE_BTN 1
+#define LV_USE_BTN 0
 #define LV_USE_BTNMATRIX 0
 #define LV_USE_CANVAS 0
 #define LV_USE_CHECKBOX 0
 #define LV_USE_DROPDOWN 0
-#define LV_USE_IMG 1
+#define LV_USE_IMG 0
 #define LV_USE_LABEL 1
 #define LV_USE_LINE 0
 #define LV_USE_ROLLER 0
@@ -54,7 +54,6 @@
 #define LV_USE_FLEX 0
 #define LV_USE_GRID 0
 
-/* Keep PNG support for the locally stored keymap profile icon. */
 #define LV_USE_BMP 0
 #define LV_USE_SJPG 0
 #define LV_USE_GIF 0

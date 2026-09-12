@@ -35,7 +35,7 @@ private:
     DisplayMessage last_message_;
     DisplayMessage msg_;
     RGBLightControl rgbLightControl_;
-    ui_settings_snapshot_t disp_setting_;
+    DisplaySettingsInfo disp_setting_;
     int wifi_rssi_{-100};
 
     // RSSI (dBm)	信号质量	描述

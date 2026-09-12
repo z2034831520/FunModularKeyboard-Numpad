@@ -3,16 +3,6 @@
 
 namespace
 {
-    const char *const kProfileDisplayNames[CONFIG_PROFILE_COUNT] = {
-        "APP 1",
-        "APP 2",
-        "APP 3",
-        "APP 4",
-        "APP 5",
-        "APP 6",
-        "APP 7",
-        "APP 8"};
-
     String getLegacyProfileConfigPath(uint8_t profileIndex)
     {
         if (profileIndex >= CONFIG_PROFILE_COUNT)
@@ -44,24 +34,6 @@ String Configuration::getProfileConfigPath(uint8_t profileIndex)
         profileIndex = 0;
     }
     return String("/keymap") + String(profileIndex + 1) + String(".ini");
-}
-
-String Configuration::getProfileIconPath(uint8_t profileIndex)
-{
-    if (profileIndex >= CONFIG_PROFILE_COUNT)
-    {
-        profileIndex = 0;
-    }
-    return String("/profile_icon_") + String(profileIndex) + String(".png");
-}
-
-const char *Configuration::getProfileDisplayName(uint8_t profileIndex)
-{
-    if (profileIndex >= CONFIG_PROFILE_COUNT)
-    {
-        profileIndex = 0;
-    }
-    return kProfileDisplayNames[profileIndex];
 }
 
 Configuration::Configuration()
@@ -280,22 +252,6 @@ bool Configuration::loadActiveProfileKeyMapping(const char *fallbackPath)
 
     xSemaphoreGive(mutex_);
     return true;
-}
-
-bool Configuration::switchActiveProfile(uint8_t profileIndex, const char *fallbackPath)
-{
-    if (profileIndex >= CONFIG_PROFILE_COUNT)
-    {
-        return false;
-    }
-
-    settings_.active_keymap_profile = profileIndex;
-    if (!loadActiveProfileKeyMapping(fallbackPath))
-    {
-        return false;
-    }
-
-    return SaveSetting(fallbackPath);
 }
 
 // 辅助函数：加载INI但不解析

@@ -98,10 +98,7 @@ public:
     bool SaveKeyMapping(const char *path = "/config.ini");
     bool SaveSetting(const char *path = "/config.ini");
     bool loadActiveProfileKeyMapping(const char *fallbackPath = "/config.ini");
-    bool switchActiveProfile(uint8_t profileIndex, const char *fallbackPath = "/config.ini");
     static String getProfileConfigPath(uint8_t profileIndex);
-    static String getProfileIconPath(uint8_t profileIndex);
-    static const char *getProfileDisplayName(uint8_t profileIndex);
 
     void InitSPIFFS();
     String getDeviceName() const { return device_name_; }

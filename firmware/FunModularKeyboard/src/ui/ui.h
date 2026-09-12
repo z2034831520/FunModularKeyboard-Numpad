@@ -22,36 +22,18 @@ extern "C" {
 #include "lvgl.h"
 #endif
 
-#include "ui_helpers.h"
-#include "ui_comp.h"
-#include "ui_comp_hook.h"
-#include "ui_events.h"
-
 ///////////////////// SCREENS ////////////////////
 
 #include "ui_MainScreen.h"
-#include "ui_KeyMapped.h"
-#include "ui_KeyMappedSecondary.h"
-#include "ui_SettingScreen.h"
-#include "ui_SettingScreenSecondary.h"
 
 ///////////////////// VARIABLES ////////////////////
 
 
-// EVENTS
-
-extern lv_obj_t * ui____initial_actions0;
-
 // FONTS
 LV_FONT_DECLARE(ui_font_BebasNeueFont48);
 LV_FONT_DECLARE(ui_font_BebasNeueFont24);
-LV_FONT_DECLARE(ui_font_BebasNeueFont16);
-LV_FONT_DECLARE(ui_font_BebasNeueFont28);
 LV_FONT_DECLARE(ui_font_BebasNeueFont86);
 LV_FONT_DECLARE(ui_font_BebasNeueFont36);
-LV_FONT_DECLARE(ui_font_BebasNeueFont14);
-LV_FONT_DECLARE(ui_font_FontCKJGT16);
-LV_FONT_DECLARE(ui_font_FontCKJGT28);
 
 // UI INIT
 void ui_init(void);

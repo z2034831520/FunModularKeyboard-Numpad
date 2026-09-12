@@ -11,7 +11,6 @@
 #include "message_types.h"
 #include "RGBLightControl.h"
 #include "Speaker.h"
-#include "RotaryEncoder.h"
 #include "LogManager.h"
 #include "IKeyboard.h"
 #include "VoiceRecognizer.h"
@@ -266,7 +265,8 @@ protected:
 
 private:
     void applyPowerMode(Configuration::POWER_MODE mode);
-    void handleKeyEvent(uint32_t key_value);
+    void handleKeyEvent(uint32_t key_value, uint32_t pressed_edges);
+    void launchWindowsTarget(const char *target);
     bool hasMappedOutput(const KeyMapping &mapping) const;
     void triggerMappedInput(const KeyMapping &mapping);
     void updateVoiceTriggerBitFromKeymap();
@@ -274,12 +274,10 @@ private:
     void finishVoiceCapture();
     void applyVoiceConfig();
     bool sendAsciiTextToHost(const String &text);
-    void SendDisplayAction(uint8_t action);
     void SendDisplayKeyInput(uint32_t key_value);
     void SendAsrRecordingState(bool isRecording);
     void SendBatteryStatusUpdate();
     void SendDisplaySetting(const DeviceSettings &setting);
-    void SendKeyMappedProfileUi();
     // void SendSpectrumDisplay(float* bands, int numBands);
     // void sendDisplayUpdate();
     bool ConnectToWiFi(const String &ssid, const String &password);
@@ -290,12 +288,7 @@ private:
     void StartTimeSync();
     void ProcessTimeSync(uint32_t nowMs);
     bool SyncTimeBeforeBluetoothStart();
-    bool switchKeymapProfile(int delta);
     void reconcileVoiceRuntimeState();
-    bool consumeUiSettingsRequest(ui_settings_snapshot_t &snapshot, bool &persist);
-    void applyUiSettingsSnapshot(const ui_settings_snapshot_t &snapshot, bool persist);
-    String formatKeyMappingDisplay(const KeyMapping &mapping, uint8_t physicalKey) const;
-    bool profileIconExists(uint8_t profileIndex) const;
     MatrixScanner scanner_;
     BatteryMonitor batteryMonitor_;
     std::unique_ptr<IKeyboard> currentKeyboard_{nullptr};
@@ -304,7 +297,6 @@ private:
     QueueHandle_t message_queue_;
     Speaker speaker_;
     // Mic mic_;
-    RotaryEncoder rotaryEncoder_;
     bool isNeedUpdateDisplay{0};
     uint32_t lastStableKeyState_{0};
     uint32_t lastBatteryStatusMs_{0};

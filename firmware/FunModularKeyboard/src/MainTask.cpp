@@ -1,9 +1,7 @@
 #include "MainTask.h"
 #include "BLEKeyboardImpl.h"
 #include "USBKeyboardImpl.h"
-#include "KeycodeCodec.h"
 #include "SystemTime.h"
-#include "ui/ui.h"
 #include <ctype.h>
 #include <time.h>
 
@@ -23,10 +21,13 @@ RTC_DATA_ATTR uint32_t g_bleTimeSyncRestartMarker = 0;
 namespace
 {
     constexpr const char *kVoiceTriggerFunctionKey = "KEY_FUNCTION_ASR";
+    constexpr const char *kGeminiFunctionKey = "KEY_FUNCTION_GEMINI";
+    constexpr const char *kGeminiUrl = "https://gemini.google.com/app";
+    constexpr const char *kClashVergeFunctionKey = "KEY_FUNCTION_CLASH_VERGE";
+    constexpr const char *kClashVergeCommand = "\"F:\\Clash Verge\\clash-verge.exe\"";
+    constexpr uint8_t kLeftWindowsKey = 0x83;
+    constexpr uint8_t kEnterKey = 0xB0;
     constexpr uint8_t kBoost5VEnablePin = 3;
-    constexpr uint32_t kSettingsUiKey1Bit = (1UL << 0);
-    constexpr uint32_t kSettingsUiKey2Bit = (1UL << 1);
-    constexpr uint32_t kSettingsUiOverrideMask = kSettingsUiKey1Bit | kSettingsUiKey2Bit;
     constexpr uint32_t kWifiRetryIntervalMs = 5000;
     constexpr uint32_t kWifiConnectTimeoutMs = 10000;
     constexpr uint32_t kTimeSyncCheckIntervalMs = 500;
@@ -36,15 +37,19 @@ namespace
     constexpr const char *kNtpServerPrimary = "0.cn.pool.ntp.org";
     constexpr const char *kNtpServerSecondary = "1.cn.pool.ntp.org";
     constexpr const char *kNtpServerFallback = "pool.ntp.org";
-    constexpr const char *kProfileIcons[CONFIG_PROFILE_COUNT] = {
-        LV_SYMBOL_HOME,
-        LV_SYMBOL_AUDIO,
-        LV_SYMBOL_EDIT,
-        LV_SYMBOL_SETTINGS,
-        LV_SYMBOL_DIRECTORY,
-        LV_SYMBOL_IMAGE,
-        LV_SYMBOL_BELL,
-        LV_SYMBOL_WIFI};
+
+    const char *lookupWindowsLaunchTarget(const String &functionKey)
+    {
+        if (functionKey.equalsIgnoreCase(kGeminiFunctionKey))
+        {
+            return kGeminiUrl;
+        }
+        if (functionKey.equalsIgnoreCase(kClashVergeFunctionKey))
+        {
+            return kClashVergeCommand;
+        }
+        return nullptr;
+    }
 
     String normalizeFunctionKey(String key)
     {
@@ -67,53 +72,6 @@ namespace
             }
         }
         return false;
-    }
-
-    void copyUtf8Truncated(char *destination, size_t destinationSize, const String &source)
-    {
-        if (destination == nullptr || destinationSize == 0)
-        {
-            return;
-        }
-
-        const char *input = source.c_str();
-        const size_t inputLength = strlen(input);
-        size_t inputIndex = 0;
-        size_t outputIndex = 0;
-
-        while (inputIndex < inputLength && outputIndex < destinationSize - 1)
-        {
-            const uint8_t leadByte = static_cast<uint8_t>(input[inputIndex]);
-            size_t charLength = 1;
-
-            if ((leadByte & 0x80U) == 0x00U)
-            {
-                charLength = 1;
-            }
-            else if ((leadByte & 0xE0U) == 0xC0U)
-            {
-                charLength = 2;
-            }
-            else if ((leadByte & 0xF0U) == 0xE0U)
-            {
-                charLength = 3;
-            }
-            else if ((leadByte & 0xF8U) == 0xF0U)
-            {
-                charLength = 4;
-            }
-
-            if (inputIndex + charLength > inputLength || outputIndex + charLength > destinationSize - 1)
-            {
-                break;
-            }
-
-            memcpy(destination + outputIndex, input + inputIndex, charLength);
-            outputIndex += charLength;
-            inputIndex += charLength;
-        }
-
-        destination[outputIndex] = '\0';
     }
 
     const char *wifiStatusToText(wl_status_t status)
@@ -151,69 +109,6 @@ namespace
                  ESP.getFreePsram());
     }
 
-    String simplifyDisplayToken(const String &token)
-    {
-        String result = token;
-        result.trim();
-        if (result.startsWith("KEY_MEDIA_"))
-        {
-            return result.substring(String("KEY_MEDIA_").length());
-        }
-        if (result.startsWith("KEY_"))
-        {
-            return result.substring(String("KEY_").length());
-        }
-        if (result.startsWith("NUM_") && result.length() == 5)
-        {
-            return result.substring(4);
-        }
-        if (result.length() == 1)
-        {
-            result.toUpperCase();
-        }
-        return result;
-    }
-
-    struct PendingUiSettingsRequest
-    {
-        bool pending{false};
-        bool persist{false};
-        ui_settings_snapshot_t snapshot{};
-    };
-
-    portMUX_TYPE g_ui_settings_lock = portMUX_INITIALIZER_UNLOCKED;
-    PendingUiSettingsRequest g_ui_settings_request{};
-    MainTask *g_main_task = nullptr;
-}
-
-extern "C" bool ui_settings_request_apply(const ui_settings_snapshot_t *snapshot)
-{
-    if (snapshot == nullptr || g_main_task == nullptr)
-    {
-        return false;
-    }
-
-    taskENTER_CRITICAL(&g_ui_settings_lock);
-    g_ui_settings_request.snapshot = *snapshot;
-    g_ui_settings_request.pending = true;
-    g_ui_settings_request.persist = false;
-    taskEXIT_CRITICAL(&g_ui_settings_lock);
-    return true;
-}
-
-extern "C" bool ui_settings_request_save(const ui_settings_snapshot_t *snapshot)
-{
-    if (snapshot == nullptr || g_main_task == nullptr)
-    {
-        return false;
-    }
-
-    taskENTER_CRITICAL(&g_ui_settings_lock);
-    g_ui_settings_request.snapshot = *snapshot;
-    g_ui_settings_request.pending = true;
-    g_ui_settings_request.persist = true;
-    taskEXIT_CRITICAL(&g_ui_settings_lock);
-    return true;
 }
 
 /**************************************************************************/
@@ -227,6 +122,13 @@ void MainTask::triggerMappedInput(const KeyMapping &mapping)
 {
     if (!currentKeyboard_ || !hasMappedOutput(mapping))
     {
+        return;
+    }
+
+    const char *launchTarget = lookupWindowsLaunchTarget(mapping.function_key);
+    if (launchTarget != nullptr)
+    {
+        launchWindowsTarget(launchTarget);
         return;
     }
 
@@ -425,7 +327,42 @@ void MainTask::processWiFiReconnect(uint32_t nowMs)
     }
 }
 
-void MainTask::handleKeyEvent(uint32_t key_value)
+void MainTask::launchWindowsTarget(const char *target)
+{
+    if (target == nullptr || target[0] == '\0')
+    {
+        LOG_WARNING("Launcher", "Launch target is empty");
+        return;
+    }
+    if (!currentKeyboard_ || !currentKeyboard_->isConnected())
+    {
+        LOG_WARNING("Launcher", "Keyboard is not connected");
+        return;
+    }
+
+    currentKeyboard_->releaseAll();
+    currentKeyboard_->press(kLeftWindowsKey);
+    currentKeyboard_->press(static_cast<uint8_t>('r'));
+    delay(50);
+    currentKeyboard_->releaseAll();
+
+    // Give the Windows Run dialog enough time to receive the URL.
+    delay(500);
+    for (const char *ch = target; *ch != '\0'; ++ch)
+    {
+        currentKeyboard_->press(static_cast<uint8_t>(*ch));
+        currentKeyboard_->release(static_cast<uint8_t>(*ch));
+        delay(8);
+    }
+
+    delay(50);
+    currentKeyboard_->press(kEnterKey);
+    delay(30);
+    currentKeyboard_->release(kEnterKey);
+    LOG_INFO("Launcher", "Windows launch command sent: %s", target);
+}
+
+void MainTask::handleKeyEvent(uint32_t key_value, uint32_t pressed_edges)
 {
     if (!currentKeyboard_)
     {
@@ -494,7 +431,15 @@ void MainTask::handleKeyEvent(uint32_t key_value)
             }
             else
             {
-                if (!mapping.function_key.equals(kVoiceTriggerFunctionKey))
+                const char *launchTarget = lookupWindowsLaunchTarget(mapping.function_key);
+                if (launchTarget != nullptr)
+                {
+                    if (pressed_edges & (1UL << i))
+                    {
+                        launchWindowsTarget(launchTarget);
+                    }
+                }
+                else if (!mapping.function_key.equals(kVoiceTriggerFunctionKey))
                 {
                     currentKeyboard_->press(mapping.function_key);
                     LOG_DEBUG("Log", "[Keyboard] Set Function Key %s", mapping.function_key.c_str());
@@ -766,15 +711,10 @@ MainTask::MainTask(const uint8_t task_core, Configuration &configuration)
       message_queue_(nullptr),
       currentWorkMode_(Configuration::NONE_MODE)
 {
-    g_main_task = this;
 }
 
 MainTask::~MainTask()
 {
-    if (g_main_task == this)
-    {
-        g_main_task = nullptr;
-    }
 }
 
 void MainTask::setBoost5VEnabled(bool enabled)
@@ -816,126 +756,6 @@ void MainTask::SendBatteryStatusUpdate()
     {
         LOG_WARNING("Display", "Drop BATTERY_STATUS_UPDATE: display queue full");
     }
-}
-
-String MainTask::formatKeyMappingDisplay(const KeyMapping &mapping, uint8_t physicalKey) const
-{
-    String display = String("K") + String(physicalKey);
-
-    if (!mapping.function_key.isEmpty())
-    {
-        return display + ":" + simplifyDisplayToken(mapping.function_key);
-    }
-
-    String combo;
-    for (uint8_t i = 0; i < mapping.macros_key_count; ++i)
-    {
-        if (!combo.isEmpty())
-        {
-            combo += "+";
-        }
-        combo += simplifyDisplayToken(lookupKeyNameByCode(mapping.macros_key[i]));
-    }
-    for (uint8_t i = 0; i < mapping.normal_key_count; ++i)
-    {
-        if (!combo.isEmpty())
-        {
-            combo += "+";
-        }
-        combo += simplifyDisplayToken(lookupKeyNameByCode(mapping.normal_key[i]));
-    }
-
-    if (combo.isEmpty())
-    {
-        combo = "--";
-    }
-
-    return display + ":" + combo;
-}
-
-void MainTask::SendKeyMappedProfileUi()
-{
-    DisplayMessage msg{};
-    const uint8_t activeProfile = configuration_.settings_.active_keymap_profile;
-    msg.type = uint8_t(MainCommand::KEYMAP_PROFILE_UPDATE);
-    msg.active_profile = activeProfile;
-    strncpy(msg.profile_name,
-            Configuration::getProfileDisplayName(activeProfile),
-            sizeof(msg.profile_name) - 1);
-    strncpy(msg.profile_icon,
-            kProfileIcons[5],
-            sizeof(msg.profile_icon) - 1);
-
-    if (profileIconExists(activeProfile))
-    {
-        strncpy(msg.profile_icon,
-                kProfileIcons[activeProfile % CONFIG_PROFILE_COUNT],
-                sizeof(msg.profile_icon) - 1);
-        const String spiffsPath = Configuration::getProfileIconPath(activeProfile);
-        const String lvglPath = String("S:") + spiffsPath;
-        File iconFile = SPIFFS.open(spiffsPath, FILE_READ);
-        if (iconFile)
-        {
-            LOG_INFO("KeymapUI", "profile=%u icon file ready path=%s size=%u",
-                     (unsigned)(activeProfile + 1),
-                     spiffsPath.c_str(),
-                     (unsigned)iconFile.size());
-            iconFile.close();
-        }
-        else
-        {
-            LOG_WARNING("KeymapUI", "profile=%u icon file missing path=%s",
-                        (unsigned)(activeProfile + 1),
-                        spiffsPath.c_str());
-        }
-        copyUtf8Truncated(msg.profile_icon_path,
-                          sizeof(msg.profile_icon_path),
-                          lvglPath);
-    }
-    else
-    {
-        LOG_INFO("KeymapUI", "profile=%u using fallback symbol %s",
-                 (unsigned)(activeProfile + 1),
-                 msg.profile_icon);
-    }
-
-    for (uint8_t i = 0; i < 16; ++i)
-    {
-        const String label = formatKeyMappingDisplay(configuration_.key_mappings_[i], i + 1);
-        strncpy(msg.keymap_labels[i], label.c_str(), sizeof(msg.keymap_labels[i]) - 1);
-    }
-
-    if (message_queue_ != nullptr)
-    {
-        xQueueSend(message_queue_, &msg, portMAX_DELAY);
-    }
-}
-
-bool MainTask::profileIconExists(uint8_t profileIndex) const
-{
-    return SPIFFS.exists(Configuration::getProfileIconPath(profileIndex));
-}
-
-bool MainTask::switchKeymapProfile(int delta)
-{
-    int profile = static_cast<int>(configuration_.settings_.active_keymap_profile) + delta;
-    if (profile < 0)
-    {
-        profile = CONFIG_PROFILE_COUNT - 1;
-    }
-    else if (profile >= CONFIG_PROFILE_COUNT)
-    {
-        profile = 0;
-    }
-
-    if (!configuration_.switchActiveProfile(static_cast<uint8_t>(profile)))
-    {
-        return false;
-    }
-
-    applyVoiceConfig();
-    SendKeyMappedProfileUi();
-    return true;
 }
 
 // 从 NTP 同步时间到系统时钟
@@ -1143,35 +963,6 @@ void MainTask::run()
         LOG_DEBUG("Log", "Starting USB work!");
     }
 
-    // 恢复板载EC11原始功能：仅用于本机屏幕/菜单切换，不进入外设按键映射模型。
-    rotaryEncoder_.Begin();
-    rotaryEncoder_.SetCallback([this](uint8_t key)
-                               {
-        if (ui_KeyMappedSecondary != NULL && lv_scr_act() == ui_KeyMappedSecondary) {
-            if (key == LV_KEY_LEFT) {
-                switchKeymapProfile(-1);
-                return;
-            }
-            if (key == LV_KEY_RIGHT) {
-                switchKeymapProfile(1);
-                return;
-            }
-        }
-
-        if (ui_get_active_screen_tag() == UI_SCREEN_SETTING_SECONDARY) {
-            if (key == LV_KEY_LEFT) {
-                this->SendDisplayAction(LV_KEY_UP);
-                return;
-            }
-            if (key == LV_KEY_RIGHT) {
-                this->SendDisplayAction(LV_KEY_DOWN);
-                return;
-            }
-        }
-        this->SendDisplayAction(key); });
-
-    SendKeyMappedProfileUi();
-
     if (configuration_.settings_.wifi_switch == true)
     {
         logHeapSnapshot("run:before_wifi_connect");
@@ -1237,16 +1028,6 @@ void MainTask::run()
         // 保留本地提示音/短音频播放能力。
         speaker_.Loop();
 
-        // 板载EC11用于界面导航。
-        rotaryEncoder_.Loop();
-
-        ui_settings_snapshot_t pendingSettings{};
-        bool persistUiSettings = false;
-        if (consumeUiSettingsRequest(pendingSettings, persistUiSettings))
-        {
-            applyUiSettingsSnapshot(pendingSettings, persistUiSettings);
-        }
-
         const uint32_t nowMs = millis();
         if (nowMs - lastBatteryStatusMs_ >= 5000)
         {
@@ -1265,20 +1046,6 @@ void MainTask::run()
 
         uint32_t pressedEdges = (~lastStableKeyState_) & key_value;
         uint32_t releasedEdges = lastStableKeyState_ & (~key_value);
-        if (ui_get_active_screen_tag() == UI_SCREEN_SETTING_SECONDARY)
-        {
-            if (pressedEdges & kSettingsUiKey1Bit)
-            {
-                SendDisplayAction(LV_KEY_LEFT);
-            }
-            if (pressedEdges & kSettingsUiKey2Bit)
-            {
-                SendDisplayAction(LV_KEY_RIGHT);
-            }
-            pressedEdges &= ~kSettingsUiOverrideMask;
-            releasedEdges &= ~kSettingsUiOverrideMask;
-            host_key_value &= ~kSettingsUiOverrideMask;
-        }
         if (pressedEdges & voiceTriggerBit_)
         {
             startVoiceCapture();
@@ -1300,7 +1067,7 @@ void MainTask::run()
         if (changes && currentKeyboard_)
         {
             // LOG_DEBUG("Log","key_value = %x", key_value);
-            handleKeyEvent(host_key_value);
+            handleKeyEvent(host_key_value, pressedEdges);
         }
 
         // 当需要更新显示时
@@ -1309,18 +1076,6 @@ void MainTask::run()
         //}
 
         usleep(100);
-    }
-}
-
-void MainTask::SendDisplayAction(uint8_t action)
-{
-    DisplayMessage msg;
-    msg.type = uint8_t(MainCommand::ACTION_INPUT);
-    msg.action = action;
-    // 发送消息到显示任务
-    if (message_queue_ != nullptr)
-    {
-        xQueueSend(message_queue_, &msg, 0);
     }
 }
 
@@ -1355,12 +1110,8 @@ void MainTask::SendDisplaySetting(const DeviceSettings &setting)
     msg.setting.rgb_mode = setting.rgb_mode;
     msg.setting.rgb_click_mode = setting.rgb_click_mode;
     msg.setting.rgb_brightness = setting.rgb_brightness;
-    msg.setting.tft_theme = setting.tft_theme;
     msg.setting.tft_brightness = setting.tft_brightness;
     msg.setting.device_volume = setting.device_volume;
-    msg.setting.power_mode = setting.power_mode;
-    msg.setting.voice_enable = setting.voice_enable;
-    msg.setting.active_keymap_profile = setting.active_keymap_profile;
     snprintf(msg.setting.rgb_single_color, sizeof(msg.setting.rgb_single_color), "%s", setting.rgb_single_colar.c_str());
     // 发送消息到显示任务
     if (message_queue_ != nullptr)
@@ -1369,149 +1120,6 @@ void MainTask::SendDisplaySetting(const DeviceSettings &setting)
         {
             LOG_WARNING("Display", "Drop SETTING_UPDATE: display queue full");
         }
-    }
-}
-
-bool MainTask::consumeUiSettingsRequest(ui_settings_snapshot_t &snapshot, bool &persist)
-{
-    bool hasPending = false;
-
-    taskENTER_CRITICAL(&g_ui_settings_lock);
-    if (g_ui_settings_request.pending)
-    {
-        snapshot = g_ui_settings_request.snapshot;
-        persist = g_ui_settings_request.persist;
-        g_ui_settings_request.pending = false;
-        g_ui_settings_request.persist = false;
-        hasPending = true;
-    }
-    taskEXIT_CRITICAL(&g_ui_settings_lock);
-
-    return hasPending;
-}
-
-void MainTask::applyUiSettingsSnapshot(const ui_settings_snapshot_t &requested, bool persist)
-{
-    ui_settings_snapshot_t snapshot = requested;
-    bool settingChanged = false;
-    bool voiceConfigChanged = false;
-    bool keymapProfileChanged = false;
-    bool powerModeChanged = false;
-    const uint8_t requestedProfile = requested.active_keymap_profile >= CONFIG_PROFILE_COUNT
-                                         ? 0
-                                         : requested.active_keymap_profile;
-    const bool shouldSwitchProfile = requestedProfile != configuration_.settings_.active_keymap_profile;
-
-    snapshot.work_mode = constrain(snapshot.work_mode,
-                                   static_cast<int32_t>(Configuration::WIRED_KEYBOARD_MODE),
-                                   static_cast<int32_t>(Configuration::WIRELESS_2_4G_KEYBOARD_MODE));
-    snapshot.rgb_mode = constrain(snapshot.rgb_mode,
-                                  static_cast<int32_t>(Configuration::RGB_NONE_MODE),
-                                  static_cast<int32_t>(Configuration::RGB_PULSE_MODE));
-    snapshot.rgb_click_mode = constrain(snapshot.rgb_click_mode,
-                                        static_cast<int32_t>(Configuration::CLICK_NONE_COLOR_MODE),
-                                        static_cast<int32_t>(Configuration::CLICK_WARE_COLOR_MODE));
-    snapshot.rgb_brightness = constrain(snapshot.rgb_brightness, 0, 100);
-    snapshot.tft_theme = constrain(snapshot.tft_theme, 1, 3);
-    snapshot.tft_brightness = constrain(snapshot.tft_brightness, 5, 100);
-    snapshot.device_volume = constrain(snapshot.device_volume, 0, 100);
-    snapshot.power_mode = constrain(snapshot.power_mode,
-                                    static_cast<int32_t>(Configuration::NORMAL_POWER_MODE),
-                                    static_cast<int32_t>(Configuration::DEEPSLEEP_POWER_MODE));
-    snapshot.active_keymap_profile = requestedProfile;
-    snapshot.rgb_single_color[sizeof(snapshot.rgb_single_color) - 1] = '\0';
-
-    if (xSemaphoreTake(configuration_.mutex_, portMAX_DELAY) == pdTRUE)
-    {
-        if (configuration_.settings_.work_mode != snapshot.work_mode)
-        {
-            setWorkMode(static_cast<Configuration::WORK_MODE>(snapshot.work_mode));
-            configuration_.settings_.work_mode = snapshot.work_mode;
-            settingChanged = true;
-        }
-        if (configuration_.settings_.rgb_mode != snapshot.rgb_mode)
-        {
-            configuration_.settings_.rgb_mode = snapshot.rgb_mode;
-            settingChanged = true;
-        }
-        if (configuration_.settings_.rgb_click_mode != snapshot.rgb_click_mode)
-        {
-            configuration_.settings_.rgb_click_mode = snapshot.rgb_click_mode;
-            settingChanged = true;
-        }
-        if (!configuration_.settings_.rgb_single_colar.equals(snapshot.rgb_single_color))
-        {
-            configuration_.settings_.rgb_single_colar = snapshot.rgb_single_color;
-            settingChanged = true;
-        }
-        if (configuration_.settings_.rgb_brightness != snapshot.rgb_brightness)
-        {
-            configuration_.settings_.rgb_brightness = snapshot.rgb_brightness;
-            settingChanged = true;
-        }
-        if (configuration_.settings_.tft_theme != snapshot.tft_theme)
-        {
-            configuration_.settings_.tft_theme = snapshot.tft_theme;
-            settingChanged = true;
-        }
-        if (configuration_.settings_.tft_brightness != snapshot.tft_brightness)
-        {
-            configuration_.settings_.tft_brightness = snapshot.tft_brightness;
-            settingChanged = true;
-        }
-        if (configuration_.settings_.device_volume != snapshot.device_volume)
-        {
-            configuration_.settings_.device_volume = snapshot.device_volume;
-            settingChanged = true;
-        }
-        if (configuration_.settings_.power_mode != snapshot.power_mode)
-        {
-            configuration_.settings_.power_mode = snapshot.power_mode;
-            settingChanged = true;
-            powerModeChanged = true;
-        }
-        if (configuration_.settings_.voice_enable != snapshot.voice_enable)
-        {
-            configuration_.settings_.voice_enable = snapshot.voice_enable;
-            settingChanged = true;
-            voiceConfigChanged = true;
-        }
-        xSemaphoreGive(configuration_.mutex_);
-    }
-
-    if (powerModeChanged)
-    {
-        applyPowerMode(static_cast<Configuration::POWER_MODE>(configuration_.settings_.power_mode));
-    }
-
-    if (shouldSwitchProfile && configuration_.switchActiveProfile(requestedProfile))
-    {
-        settingChanged = true;
-        voiceConfigChanged = true;
-        keymapProfileChanged = true;
-    }
-
-    if (voiceConfigChanged)
-    {
-        applyVoiceConfig();
-    }
-    if (settingChanged || voiceConfigChanged)
-    {
-        reconcileVoiceRuntimeState();
-        speaker_.SetVolume(configuration_.settings_.device_volume / 5);
-        SendDisplaySetting(configuration_.settings_);
-        if (persist)
-        {
-            configuration_.SaveSetting();
-        }
-    }
-    else if (persist)
-    {
-        configuration_.SaveSetting();
-    }
-    if (keymapProfileChanged)
-    {
-        SendKeyMappedProfileUi();
     }
 }
 

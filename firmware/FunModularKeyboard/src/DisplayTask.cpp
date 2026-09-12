@@ -1,38 +1,6 @@
 #include "DisplayTask.h"
 #include "SystemTime.h"
 #include <WiFi.h>
-#include <SPIFFS.h>
-#include <cstdlib>
-#include <iostream>
-#include <memory>
-#include <string>
-
-extern "C"
-{
-    unsigned lodepng_decode32(unsigned char **out,
-                              unsigned *w,
-                              unsigned *h,
-                              const unsigned char *in,
-                              size_t insize);
-    const char *lodepng_error_text(unsigned code);
-}
-
-// // 设置单个数字图片
-// void SetDigitImage(lv_obj_t *img, char digit) {
-//     switch(digit) {
-//         case '0':lv_img_set_src(img, &ui_img_zero_png);break;
-//         case '1':lv_img_set_src(img, &ui_img_one_png);break;
-//         case '2':lv_img_set_src(img, &ui_img_two_png);break;
-//         case '3':lv_img_set_src(img, &ui_img_three_png);break;
-//         case '4':lv_img_set_src(img, &ui_img_four_png);break;
-//         case '5':lv_img_set_src(img, &ui_img_five_png);break;
-//         case '6':lv_img_set_src(img, &ui_img_six_png);break;
-//         case '7':lv_img_set_src(img, &ui_img_seven_png);break;
-//         case '8':lv_img_set_src(img, &ui_img_eight_png);break;
-//         case '9':lv_img_set_src(img, &ui_img_nine_png);break;
-//         default:break;
-//     }
-// }
 
 const char *weekdays[] = {
     "SUNDAY",    // tm_wday = 0
@@ -50,14 +18,6 @@ const char *months_uppercase_abbr[] = {
 
 namespace
 {
-    struct DecodedProfileIconImage
-    {
-        std::unique_ptr<uint8_t[]> pixels;
-        size_t size = 0;
-        uint16_t width = 0;
-        uint16_t height = 0;
-    };
-
     struct IndexedSingleColorPreset
     {
         const char *id;
@@ -111,101 +71,6 @@ namespace
         return value;
     }
 
-    bool decodeProfileIconFromLvglPath(const char *lvglPath, DecodedProfileIconImage &decodedImage)
-    {
-        decodedImage = DecodedProfileIconImage{};
-
-        if (lvglPath == nullptr || lvglPath[0] == '\0')
-        {
-            return false;
-        }
-
-        String spiffsPath = String(lvglPath);
-        if (spiffsPath.startsWith("S:"))
-        {
-            spiffsPath = spiffsPath.substring(2);
-        }
-        if (!spiffsPath.startsWith("/"))
-        {
-            spiffsPath = String("/") + spiffsPath;
-        }
-
-        File file = SPIFFS.open(spiffsPath, FILE_READ);
-        if (!file)
-        {
-            LOG_WARNING("KeymapUI", "failed to open icon png via SPIFFS path=%s", spiffsPath.c_str());
-            return false;
-        }
-
-        const size_t pngSize = static_cast<size_t>(file.size());
-        if (pngSize == 0)
-        {
-            file.close();
-            LOG_WARNING("KeymapUI", "icon png empty path=%s", spiffsPath.c_str());
-            return false;
-        }
-
-        std::unique_ptr<uint8_t[]> pngData(new uint8_t[pngSize]);
-        const size_t expectedSize = pngSize;
-        const size_t bytesRead = file.read(pngData.get(), pngSize);
-        file.close();
-        if (bytesRead != expectedSize)
-        {
-            LOG_WARNING("KeymapUI", "icon png read short path=%s read=%u expected=%u",
-                        spiffsPath.c_str(),
-                        static_cast<unsigned>(bytesRead),
-                        static_cast<unsigned>(expectedSize));
-            return false;
-        }
-
-        unsigned char *rgbaData = nullptr;
-        unsigned decodedWidth = 0;
-        unsigned decodedHeight = 0;
-        const unsigned decodeResult = lodepng_decode32(&rgbaData,
-                                                       &decodedWidth,
-                                                       &decodedHeight,
-                                                       pngData.get(),
-                                                       pngSize);
-        if (decodeResult != 0 || rgbaData == nullptr || decodedWidth == 0 || decodedHeight == 0)
-        {
-            LOG_WARNING("KeymapUI", "png decode failed path=%s error=%u message=%s",
-                        spiffsPath.c_str(),
-                        decodeResult,
-                        lodepng_error_text(decodeResult));
-            if (rgbaData != nullptr)
-            {
-                free(rgbaData);
-            }
-            return false;
-        }
-
-        const size_t pixelCount = static_cast<size_t>(decodedWidth) * static_cast<size_t>(decodedHeight);
-        const size_t lvglImageSize = static_cast<size_t>(LV_IMG_BUF_SIZE_TRUE_COLOR_ALPHA(decodedWidth, decodedHeight));
-        decodedImage.pixels.reset(new uint8_t[lvglImageSize]);
-        decodedImage.size = lvglImageSize;
-        decodedImage.width = static_cast<uint16_t>(decodedWidth);
-        decodedImage.height = static_cast<uint16_t>(decodedHeight);
-
-        for (size_t index = 0; index < pixelCount; ++index)
-        {
-            const uint8_t red = rgbaData[index * 4 + 0];
-            const uint8_t green = rgbaData[index * 4 + 1];
-            const uint8_t blue = rgbaData[index * 4 + 2];
-            const uint8_t alpha = rgbaData[index * 4 + 3];
-            const lv_color_t color = lv_color_make(red, green, blue);
-            uint8_t *dest = decodedImage.pixels.get() + (index * LV_IMG_PX_SIZE_ALPHA_BYTE);
-            memcpy(dest, &color, sizeof(lv_color_t));
-            dest[LV_IMG_PX_SIZE_ALPHA_BYTE - 1] = alpha;
-        }
-
-        free(rgbaData);
-        LOG_INFO("KeymapUI", "decoded icon path=%s png=%ux%u lvgl_bytes=%u",
-                 spiffsPath.c_str(),
-                 decodedWidth,
-                 decodedHeight,
-                 static_cast<unsigned>(decodedImage.size));
-        return true;
-    }
 }
 
 // 获取当前时间并格式化
@@ -466,17 +331,6 @@ void DisplayTask::UpdateDisplay(const DisplayMessage &msg)
 {
     switch (MainCommand(msg.type))
     {
-    case MainCommand::ACTION_INPUT:
-    {
-        // 编码器导航逻辑由各个 screen 的 LV_EVENT_KEY 统一处理。
-        lv_obj_t *active_screen = lv_scr_act();
-        if (active_screen)
-        {
-            lv_event_send(active_screen, LV_EVENT_KEY, (void *)(uint32_t)msg.action);
-        }
-        // LOG_DEBUG("Log","updateDisplay msg.action=%d",msg.action);
-        break;
-    }
     case MainCommand::KEY_INPUT:
     {
         if (disp_setting_.rgb_click_mode == Configuration::RGB_CLICK_MODE::CLICK_SINGLE_COLOR_MODE)
@@ -547,13 +401,6 @@ void DisplayTask::UpdateDisplay(const DisplayMessage &msg)
         }
 
         // 更新RGB和TFT亮度显示
-        char light[16] = {0};
-        sprintf(light, "RGB_LIGHT:%d%", disp_setting_.rgb_brightness);
-        ui_MainScreen_set_rgb_light(light);
-        sprintf(light, "TFT_LIGHT:%d%", disp_setting_.tft_brightness);
-        ui_MainScreen_set_tft_light(light);
-        ui_SettingScreenSecondary_set_snapshot(&disp_setting_);
-
         break;
     }
     case MainCommand::ASR_RECORDING_STATE:
@@ -568,52 +415,6 @@ void DisplayTask::UpdateDisplay(const DisplayMessage &msg)
         LOG_DEBUG("Battery", "Display voltage: %u mV, level: %u%%",
                   (unsigned)msg.battery_status.voltage_mv,
                   (unsigned)msg.battery_status.percent);
-        break;
-    }
-
-    case MainCommand::KEYMAP_PROFILE_UPDATE:
-    {
-        char fileName[32] = {0};
-        DecodedProfileIconImage decodedIcon;
-        snprintf(fileName, sizeof(fileName), "config_profile_%u.ini", msg.active_profile);
-        if (msg.profile_icon_path[0] != '\0')
-        {
-            lv_img_header_t header;
-            const lv_res_t infoResult = lv_img_decoder_get_info(msg.profile_icon_path, &header);
-            LOG_INFO("KeymapUI", "display profile=%u icon_src=%s decoder_result=%d size=%ux%u cf=%u",
-                     (unsigned)(msg.active_profile + 1),
-                     msg.profile_icon_path,
-                     (int)infoResult,
-                     (unsigned)header.w,
-                     (unsigned)header.h,
-                     (unsigned)header.cf);
-            decodeProfileIconFromLvglPath(msg.profile_icon_path, decodedIcon);
-        }
-        else
-        {
-            LOG_INFO("KeymapUI", "display profile=%u icon_src=<fallback:%s>",
-                     (unsigned)(msg.active_profile + 1),
-                     msg.profile_icon);
-        }
-        ui_KeyMapped_set_profile_icon_image_data(decodedIcon.pixels.get(),
-                                                 decodedIcon.size,
-                                                 decodedIcon.width,
-                                                 decodedIcon.height,
-                                                 msg.profile_icon);
-        ui_KeyMappedSecondary_set_profile(msg.profile_icon, msg.profile_name, fileName);
-        ui_KeyMappedSecondary_set_profile_icon_image_data(decodedIcon.pixels.get(),
-                                                          decodedIcon.size,
-                                                          decodedIcon.width,
-                                                          decodedIcon.height,
-                                                          msg.profile_icon);
-        for (unsigned int i = 0; i < 16; ++i)
-        {
-            ui_KeyMappedSecondary_set_key_label(i, msg.keymap_labels[i]);
-        }
-        if (ui_get_active_screen_tag() == UI_SCREEN_KEYMAPPED || ui_get_active_screen_tag() == UI_SCREEN_KEYMAPPED_SECONDARY)
-        {
-            lv_refr_now(NULL);
-        }
         break;
     }
 

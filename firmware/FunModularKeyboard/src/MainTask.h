@@ -11,6 +11,7 @@
 #include "message_types.h"
 #include "RGBLightControl.h"
 #include "Speaker.h"
+#include "RotaryEncoder.h"
 #include "LogManager.h"
 #include "IKeyboard.h"
 #include "VoiceRecognizer.h"
@@ -274,6 +275,8 @@ private:
     void finishVoiceCapture();
     void applyVoiceConfig();
     bool sendAsciiTextToHost(const String &text);
+    void sendMediaKey(const char *key);
+    static void HandleRotaryAction(RotaryAction action, void *context);
     void SendDisplayKeyInput(uint32_t key_value);
     void SendAsrRecordingState(bool isRecording);
     void SendBatteryStatusUpdate();
@@ -296,6 +299,7 @@ private:
     Configuration &configuration_;
     QueueHandle_t message_queue_;
     Speaker speaker_;
+    RotaryEncoder rotaryEncoder_;
     // Mic mic_;
     bool isNeedUpdateDisplay{0};
     uint32_t lastStableKeyState_{0};

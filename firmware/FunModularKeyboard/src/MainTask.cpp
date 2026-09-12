@@ -25,6 +25,9 @@ namespace
     constexpr const char *kGeminiUrl = "https://gemini.google.com/app";
     constexpr const char *kClashVergeFunctionKey = "KEY_FUNCTION_CLASH_VERGE";
     constexpr const char *kClashVergeCommand = "\"F:\\Clash Verge\\clash-verge.exe\"";
+    constexpr const char *kMediaVolumeUp = "KEY_MEDIA_VOLUME_UP";
+    constexpr const char *kMediaVolumeDown = "KEY_MEDIA_VOLUME_DOWN";
+    constexpr const char *kMediaMute = "KEY_MEDIA_MUTE";
     constexpr uint8_t kLeftWindowsKey = 0x83;
     constexpr uint8_t kEnterKey = 0xB0;
     constexpr uint8_t kBoost5VEnablePin = 3;
@@ -885,6 +888,40 @@ bool MainTask::SyncTimeBeforeBluetoothStart()
     return synchronized;
 }
 
+void MainTask::sendMediaKey(const char *key)
+{
+    if (key == nullptr || currentKeyboard_ == nullptr || !currentKeyboard_->isConnected())
+    {
+        return;
+    }
+
+    const String mediaKey(key);
+    currentKeyboard_->press(mediaKey);
+    currentKeyboard_->release(mediaKey);
+}
+
+void MainTask::HandleRotaryAction(RotaryAction action, void *context)
+{
+    MainTask *task = static_cast<MainTask *>(context);
+    if (task == nullptr)
+    {
+        return;
+    }
+
+    switch (action)
+    {
+    case RotaryAction::CLOCKWISE:
+        task->sendMediaKey(kMediaVolumeUp);
+        break;
+    case RotaryAction::COUNTERCLOCKWISE:
+        task->sendMediaKey(kMediaVolumeDown);
+        break;
+    case RotaryAction::CLICK:
+        task->sendMediaKey(kMediaMute);
+        break;
+    }
+}
+
 void MainTask::run()
 {
 
@@ -948,6 +985,9 @@ void MainTask::run()
 
     // 根据配置设置初始工作模式
     setWorkMode(desiredMode);
+
+    rotaryEncoder_.SetCallback(&MainTask::HandleRotaryAction, this);
+    rotaryEncoder_.Begin();
 
     logHeapSnapshot("run:after_setWorkMode");
     startupReady_.store(true, std::memory_order_release);
@@ -1027,6 +1067,7 @@ void MainTask::run()
 
         // 保留本地提示音/短音频播放能力。
         speaker_.Loop();
+        rotaryEncoder_.Loop();
 
         const uint32_t nowMs = millis();
         if (nowMs - lastBatteryStatusMs_ >= 5000)

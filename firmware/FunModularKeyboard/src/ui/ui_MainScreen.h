@@ -8,6 +8,7 @@ extern "C" {
 void ui_MainScreen_screen_init(void);
 void ui_MainScreen_screen_destroy(void);
 void ui_MainScreen_set_work_mode(const char *mode);
+void ui_MainScreen_set_codex_status(const char *status, uint32_t color);
 
 extern lv_obj_t * ui_MainScreen;
 extern lv_obj_t * ui_LabelTime;
@@ -15,6 +16,7 @@ extern lv_obj_t * ui_LabelData;
 extern lv_obj_t * ui_LabelSecond;
 extern lv_obj_t * ui_LabelWeek;
 extern lv_obj_t * ui_LabelWorkmode;
+extern lv_obj_t * ui_LabelCodexStatus;
 
 #ifdef __cplusplus
 } /*extern "C"*/

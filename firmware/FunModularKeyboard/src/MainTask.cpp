@@ -28,11 +28,18 @@ namespace
     constexpr const char *kMediaVolumeUp = "KEY_MEDIA_VOLUME_UP";
     constexpr const char *kMediaVolumeDown = "KEY_MEDIA_VOLUME_DOWN";
     constexpr const char *kMediaMute = "KEY_MEDIA_MUTE";
+    constexpr const char *kCodexAnalyzeFunctionKey = "KEY_FUNCTION_CODEX_ANALYZE";
+    constexpr const char *kCodexReviewFunctionKey = "KEY_FUNCTION_CODEX_REVIEW";
+    constexpr const char *kCodexAcceptFunctionKey = "KEY_FUNCTION_CODEX_ACCEPT";
+    constexpr const char *kCodexDeclineFunctionKey = "KEY_FUNCTION_CODEX_DECLINE";
     constexpr uint8_t kLeftWindowsKey = 0x83;
     constexpr uint8_t kEnterKey = 0xB0;
     constexpr uint8_t kBoost5VEnablePin = 3;
     constexpr uint32_t kWifiRetryIntervalMs = 5000;
     constexpr uint32_t kWifiConnectTimeoutMs = 10000;
+    // WiFi.status() can retain NO_SSID/CONNECT_FAILED from the previous scan
+    // briefly after WiFi.begin(). Do not abort the new scan on that stale value.
+    constexpr uint32_t kWifiFailureStatusGraceMs = 3000;
     constexpr uint32_t kTimeSyncCheckIntervalMs = 500;
     constexpr uint32_t kTimeSyncRestartIntervalMs = 30000;
     constexpr uint32_t kBluetoothStartupTimeSyncTimeoutMs = 10000;
@@ -52,6 +59,31 @@ namespace
             return kClashVergeCommand;
         }
         return nullptr;
+    }
+
+    bool lookupCodexTask(const String &functionKey, CodexTask &task)
+    {
+        if (functionKey.equalsIgnoreCase(kCodexAnalyzeFunctionKey))
+        {
+            task = CodexTask::ANALYZE;
+            return true;
+        }
+        if (functionKey.equalsIgnoreCase(kCodexReviewFunctionKey))
+        {
+            task = CodexTask::REVIEW;
+            return true;
+        }
+        if (functionKey.equalsIgnoreCase(kCodexAcceptFunctionKey))
+        {
+            task = CodexTask::ACCEPT;
+            return true;
+        }
+        if (functionKey.equalsIgnoreCase(kCodexDeclineFunctionKey))
+        {
+            task = CodexTask::DECLINE;
+            return true;
+        }
+        return false;
     }
 
     String normalizeFunctionKey(String key)
@@ -101,6 +133,20 @@ namespace
             return "UNKNOWN";
         }
     }
+
+    constexpr bool shouldFinishWiFiAttempt(wl_status_t status, uint32_t elapsedMs)
+    {
+        return elapsedMs >= kWifiConnectTimeoutMs ||
+               (elapsedMs >= kWifiFailureStatusGraceMs &&
+                (status == WL_CONNECT_FAILED ||
+                 status == WL_NO_SHIELD ||
+                 status == WL_NO_SSID_AVAIL));
+    }
+
+    static_assert(!shouldFinishWiFiAttempt(WL_NO_SSID_AVAIL, 0),
+                  "A stale NO_SSID result must not cancel a new WiFi scan");
+    static_assert(shouldFinishWiFiAttempt(WL_NO_SSID_AVAIL, kWifiFailureStatusGraceMs),
+                  "A persistent terminal WiFi result must eventually be retried");
 
     void logHeapSnapshot(const char *stage)
     {
@@ -308,10 +354,13 @@ void MainTask::processWiFiReconnect(uint32_t nowMs)
 
     if (wifiConnectAttemptStartedMs_ != 0)
     {
-        if (status == WL_CONNECT_FAILED || status == WL_NO_SHIELD || status == WL_NO_SSID_AVAIL ||
-            nowMs - wifiConnectAttemptStartedMs_ >= kWifiConnectTimeoutMs)
+        const uint32_t attemptElapsedMs = nowMs - wifiConnectAttemptStartedMs_;
+        if (shouldFinishWiFiAttempt(status, attemptElapsedMs))
         {
-            LOG_WARNING("Log", "WiFi attempt failed, status=%s(%d)", wifiStatusToText(status), status);
+            LOG_WARNING("Log", "WiFi attempt failed after %u ms, status=%s(%d)",
+                        (unsigned)attemptElapsedMs,
+                        wifiStatusToText(status),
+                        status);
             WiFi.disconnect(false, false);
             wifiConnectAttemptStartedMs_ = 0;
             wifiNextRetryAtMs_ = nowMs + kWifiRetryIntervalMs;
@@ -365,8 +414,53 @@ void MainTask::launchWindowsTarget(const char *target)
     LOG_INFO("Launcher", "Windows launch command sent: %s", target);
 }
 
+uint32_t MainTask::HandleCodexKeyActions(uint32_t pressed_edges)
+{
+    uint32_t codexMask = 0;
+    for (int i = 0; i < PHYSICAL_KEY_NUM; ++i)
+    {
+        const uint32_t keyBit = 1UL << i;
+        const KeyMapping mapping = configuration_.getKeyMapping(i + 1);
+        CodexTask task;
+        if (!lookupCodexTask(mapping.function_key, task))
+        {
+            continue;
+        }
+
+        codexMask |= keyBit;
+        if ((pressed_edges & keyBit) == 0)
+        {
+            continue;
+        }
+
+        if (codexBridge_.QueueTask(task))
+        {
+            LOG_INFO("Codex", "Queued task from K%d", i + 1);
+        }
+        else
+        {
+            LOG_WARNING("Codex", "Host unavailable or task queue full for K%d", i + 1);
+        }
+    }
+    return codexMask;
+}
+
 void MainTask::handleKeyEvent(uint32_t key_value, uint32_t pressed_edges)
 {
+    const uint32_t codexMask = HandleCodexKeyActions(pressed_edges);
+    key_value &= ~codexMask;
+    pressed_edges &= ~codexMask;
+    SendDisplayKeyInput(key_value);
+
+    if (key_value == 0)
+    {
+        if (currentKeyboard_)
+        {
+            currentKeyboard_->releaseAll();
+        }
+        return;
+    }
+
     if (!currentKeyboard_)
     {
         LOG_ERROR("Log", "No keyboard initialized");
@@ -396,9 +490,6 @@ void MainTask::handleKeyEvent(uint32_t key_value, uint32_t pressed_edges)
     }
 
     uint32_t temp_key_value = key_value;
-
-    // 屏幕反馈不能阻塞 HID 输入路径。
-    SendDisplayKeyInput(key_value);
 
     // 先释放所有按键，然后按新按下的键
     currentKeyboard_->releaseAll();
@@ -922,6 +1013,15 @@ void MainTask::HandleRotaryAction(RotaryAction action, void *context)
     }
 }
 
+void MainTask::HandleCodexStatus(CodexStatus status, uint8_t task_count, void *context)
+{
+    MainTask *task = static_cast<MainTask *>(context);
+    if (task != nullptr)
+    {
+        task->SendCodexStatusUpdate(status, task_count);
+    }
+}
+
 void MainTask::run()
 {
 
@@ -988,6 +1088,8 @@ void MainTask::run()
 
     rotaryEncoder_.SetCallback(&MainTask::HandleRotaryAction, this);
     rotaryEncoder_.Begin();
+    codexBridge_.SetStatusCallback(&MainTask::HandleCodexStatus, this);
+    codexBridge_.Begin();
 
     logHeapSnapshot("run:after_setWorkMode");
     startupReady_.store(true, std::memory_order_release);
@@ -1068,6 +1170,7 @@ void MainTask::run()
         // 保留本地提示音/短音频播放能力。
         speaker_.Loop();
         rotaryEncoder_.Loop();
+        codexBridge_.Loop();
 
         const uint32_t nowMs = millis();
         if (nowMs - lastBatteryStatusMs_ >= 5000)
@@ -1105,7 +1208,7 @@ void MainTask::run()
 
         // 触发键只用于语音，不再透传成普通按键。
         host_key_value &= ~voiceTriggerBit_;
-        if (changes && currentKeyboard_)
+        if (changes)
         {
             // LOG_DEBUG("Log","key_value = %x", key_value);
             handleKeyEvent(host_key_value, pressedEdges);
@@ -1140,6 +1243,18 @@ void MainTask::SendAsrRecordingState(bool isRecording)
     if (message_queue_ != nullptr)
     {
         xQueueSend(message_queue_, &msg, portMAX_DELAY);
+    }
+}
+
+void MainTask::SendCodexStatusUpdate(CodexStatus status, uint8_t task_count)
+{
+    DisplayMessage msg{};
+    msg.type = uint8_t(MainCommand::CODEX_STATUS_UPDATE);
+    msg.codex_status = status;
+    msg.codex_task_count = task_count;
+    if (message_queue_ != nullptr && xQueueSend(message_queue_, &msg, 0) != pdPASS)
+    {
+        LOG_WARNING("Display", "Drop CODEX_STATUS_UPDATE: display queue full");
     }
 }
 

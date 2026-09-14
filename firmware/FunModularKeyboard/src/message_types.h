@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include "Configuration.h"
+#include "CodexProtocol.h"
 
 struct BatteryStatusInfo
 {
@@ -26,6 +27,8 @@ struct DisplayMessage
     uint8_t type{0};
     uint32_t key_value{0};
     bool asr_recording{false};
+    CodexStatus codex_status{CodexStatus::DISCONNECTED};
+    uint8_t codex_task_count{1};
     BatteryStatusInfo battery_status;
     DisplaySettingsInfo setting;
 };
@@ -37,4 +40,5 @@ enum class MainCommand
     SYSTEM_RESET,
     ASR_RECORDING_STATE,
     BATTERY_STATUS_UPDATE,
+    CODEX_STATUS_UPDATE,
 };

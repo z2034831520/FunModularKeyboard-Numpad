@@ -20,6 +20,7 @@ RGBLightControl::~RGBLightControl() {}
  */
 void RGBLightControl::SetBrightness(uint8_t brightness)
 {
+  _brightness = brightness;
   FastLED.setBrightness(brightness * 255 / 100);
 }
 
@@ -75,6 +76,11 @@ void RGBLightControl::SetLEDHSV(uint8_t index, uint8_t h, uint8_t s, uint8_t v)
   leds[index] = CHSV(h, s, v);
 }
 
+void RGBLightControl::Show()
+{
+  FastLED.show();
+}
+
 /**
  * 设置所有LED的RGB颜色
  * @param r 红色值(0-255)
@@ -109,7 +115,6 @@ void RGBLightControl::Rainbow()
   fill_rainbow(leds, NUM_LEDS, hue, 7); // 7是色相增量，控制彩虹宽度
   hue++;
   FastLED.show();
-  FastLED.delay(30);
 }
 
 // 彩虹波浪效果
@@ -122,7 +127,6 @@ void RGBLightControl::RainbowWave()
   }
   hue++;
   FastLED.show();
-  FastLED.delay(30);
 }
 
 // 颜色循环效果
@@ -132,7 +136,6 @@ void RGBLightControl::ColorCycle()
   fill_solid(leds, NUM_LEDS, CHSV(hue, 255, 255));
   hue++;
   FastLED.show();
-  FastLED.delay(50);
 }
 
 // 流星效果
@@ -146,7 +149,6 @@ void RGBLightControl::Meteor()
   leds[pos] = CHSV(beatsin8(10, 0, 255), 255, 255);
 
   FastLED.show();
-  FastLED.delay(30);
 }
 
 // 火焰效果
@@ -167,24 +169,28 @@ void RGBLightControl::Fire()
   }
 
   FastLED.show();
-  FastLED.delay(50);
 }
 
 // 脉冲效果
 void RGBLightControl::Pulse(uint8_t r, uint8_t g, uint8_t b)
 {
-  static uint8_t brightness = 0;
-  static int8_t fadeAmount = 5;
+  static int16_t brightness = 0;
+  static int16_t fadeAmount = 5;
 
-  fill_solid(leds, NUM_LEDS, CRGB(r, g, b).nscale8(brightness));
+  fill_solid(leds, NUM_LEDS, CRGB(r, g, b).nscale8((uint8_t)brightness));
 
   brightness += fadeAmount;
 
-  if (brightness <= 0 || brightness >= 255)
+  if (brightness <= 0)
   {
-    fadeAmount = -fadeAmount;
+    brightness = 0;
+    fadeAmount = 5;
+  }
+  else if (brightness >= 255)
+  {
+    brightness = 255;
+    fadeAmount = -5;
   }
 
   FastLED.show();
-  FastLED.delay(30);
 }

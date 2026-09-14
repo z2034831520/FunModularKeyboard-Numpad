@@ -12,6 +12,7 @@
 #include "RGBLightControl.h"
 #include "Speaker.h"
 #include "RotaryEncoder.h"
+#include "CodexSerialBridge.h"
 #include "LogManager.h"
 #include "IKeyboard.h"
 #include "VoiceRecognizer.h"
@@ -277,8 +278,11 @@ private:
     bool sendAsciiTextToHost(const String &text);
     void sendMediaKey(const char *key);
     static void HandleRotaryAction(RotaryAction action, void *context);
+    uint32_t HandleCodexKeyActions(uint32_t pressed_edges);
+    static void HandleCodexStatus(CodexStatus status, uint8_t task_count, void *context);
     void SendDisplayKeyInput(uint32_t key_value);
     void SendAsrRecordingState(bool isRecording);
+    void SendCodexStatusUpdate(CodexStatus status, uint8_t task_count);
     void SendBatteryStatusUpdate();
     void SendDisplaySetting(const DeviceSettings &setting);
     // void SendSpectrumDisplay(float* bands, int numBands);
@@ -300,6 +304,7 @@ private:
     QueueHandle_t message_queue_;
     Speaker speaker_;
     RotaryEncoder rotaryEncoder_;
+    CodexSerialBridge codexBridge_;
     // Mic mic_;
     bool isNeedUpdateDisplay{0};
     uint32_t lastStableKeyState_{0};

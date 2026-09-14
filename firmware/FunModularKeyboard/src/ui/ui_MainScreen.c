@@ -6,6 +6,7 @@ lv_obj_t * ui_LabelData = NULL;
 lv_obj_t * ui_LabelSecond = NULL;
 lv_obj_t * ui_LabelWeek = NULL;
 lv_obj_t * ui_LabelWorkmode = NULL;
+lv_obj_t * ui_LabelCodexStatus = NULL;
 
 static lv_obj_t * ui_line3 = NULL;
 
@@ -54,6 +55,14 @@ void ui_MainScreen_screen_init(void)
     lv_obj_set_style_text_color(ui_LabelWorkmode, lv_color_hex(0x808080), 0);
     lv_obj_set_style_text_font(ui_LabelWorkmode, &ui_font_BebasNeueFont24, 0);
 
+    ui_LabelCodexStatus = lv_label_create(ui_MainScreen);
+    lv_obj_set_size(ui_LabelCodexStatus, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_align(ui_LabelCodexStatus, LV_ALIGN_BOTTOM_RIGHT);
+    lv_obj_set_pos(ui_LabelCodexStatus, -8, -4);
+    lv_label_set_text(ui_LabelCodexStatus, "CODEX OFF");
+    lv_obj_set_style_text_color(ui_LabelCodexStatus, lv_color_hex(0x808080), 0);
+    lv_obj_set_style_text_font(ui_LabelCodexStatus, &ui_font_BebasNeueFont24, 0);
+
     ui_line3 = lv_obj_create(ui_MainScreen);
     lv_obj_set_size(ui_line3, 186, 1);
     lv_obj_set_pos(ui_line3, 3, 13);
@@ -65,6 +74,14 @@ void ui_MainScreen_set_work_mode(const char *mode)
 {
     if (ui_LabelWorkmode != NULL) {
         lv_label_set_text(ui_LabelWorkmode, mode);
+    }
+}
+
+void ui_MainScreen_set_codex_status(const char *status, uint32_t color)
+{
+    if (ui_LabelCodexStatus != NULL) {
+        lv_label_set_text(ui_LabelCodexStatus, status);
+        lv_obj_set_style_text_color(ui_LabelCodexStatus, lv_color_hex(color), 0);
     }
 }
 
@@ -80,5 +97,6 @@ void ui_MainScreen_screen_destroy(void)
     ui_LabelSecond = NULL;
     ui_LabelWeek = NULL;
     ui_LabelWorkmode = NULL;
+    ui_LabelCodexStatus = NULL;
     ui_line3 = NULL;
 }

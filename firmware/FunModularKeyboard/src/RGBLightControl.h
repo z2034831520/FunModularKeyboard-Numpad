@@ -18,6 +18,7 @@ public:
     void TurnOffLED(uint8_t index);
     void SetLEDColor(uint8_t index, uint8_t r, uint8_t g, uint8_t b);
     void SetLEDHSV(uint8_t index, uint8_t h, uint8_t s, uint8_t v);
+    void Show();
 
     void SetAllLEDColor(uint8_t r, uint8_t g, uint8_t b);
     void TurnOffAllLED();

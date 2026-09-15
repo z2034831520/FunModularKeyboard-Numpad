@@ -28,6 +28,7 @@ struct DisplayMessage
     uint32_t key_value{0};
     bool asr_recording{false};
     CodexStatus codex_status{CodexStatus::DISCONNECTED};
+    CodexEffort codex_effort{CodexEffort::UNKNOWN};
     uint8_t codex_task_count{1};
     BatteryStatusInfo battery_status;
     DisplaySettingsInfo setting;

@@ -7,6 +7,7 @@ namespace
     constexpr uint8_t kEncoderSwitchPin = 9;
     constexpr int8_t kTransitionsPerDetent = 4;
     constexpr uint32_t kButtonDebounceMs = 25;
+    constexpr uint32_t kButtonLongPressMs = 700;
 
     // Quadrature state table: previous AB in bits 3:2, current AB in bits 1:0.
     constexpr int8_t kTransitionTable[16] = {
@@ -27,6 +28,8 @@ void RotaryEncoder::Begin()
     lastRawButtonPressed_ = digitalRead(kEncoderSwitchPin) == LOW;
     stableButtonPressed_ = lastRawButtonPressed_;
     buttonChangedAtMs_ = millis();
+    buttonPressedAtMs_ = 0;
+    longPressEmitted_ = false;
     rotationAccumulator_ = 0;
     initialized_ = true;
 }
@@ -90,8 +93,20 @@ void RotaryEncoder::CheckButton()
         stableButtonPressed_ = rawPressed;
         if (stableButtonPressed_)
         {
+            buttonPressedAtMs_ = nowMs;
+            longPressEmitted_ = false;
+        }
+        else if (!longPressEmitted_)
+        {
             Emit(RotaryAction::CLICK);
         }
+    }
+
+    if (stableButtonPressed_ && !longPressEmitted_ &&
+        static_cast<uint32_t>(nowMs - buttonPressedAtMs_) >= kButtonLongPressMs)
+    {
+        longPressEmitted_ = true;
+        Emit(RotaryAction::LONG_PRESS);
     }
 }
 

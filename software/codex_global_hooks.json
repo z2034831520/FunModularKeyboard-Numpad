@@ -1,0 +1,90 @@
+{
+  "description": "Forward all local Codex lifecycle events to the FunModularKeyboard bridge.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.codex/keyboard-bridge/codex_status_hook.py\"",
+            "commandWindows": "py \"$env:USERPROFILE\\.codex\\keyboard-bridge\\codex_status_hook.py\"",
+            "async": true,
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.codex/keyboard-bridge/codex_status_hook.py\"",
+            "commandWindows": "py \"$env:USERPROFILE\\.codex\\keyboard-bridge\\codex_status_hook.py\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.codex/keyboard-bridge/codex_status_hook.py\"",
+            "commandWindows": "py \"$env:USERPROFILE\\.codex\\keyboard-bridge\\codex_status_hook.py\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.codex/keyboard-bridge/codex_status_hook.py\"",
+            "commandWindows": "py \"$env:USERPROFILE\\.codex\\keyboard-bridge\\codex_status_hook.py\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.codex/keyboard-bridge/codex_status_hook.py\"",
+            "commandWindows": "py \"$env:USERPROFILE\\.codex\\keyboard-bridge\\codex_status_hook.py\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.codex/keyboard-bridge/codex_status_hook.py\"",
+            "commandWindows": "py \"$env:USERPROFILE\\.codex\\keyboard-bridge\\codex_status_hook.py\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "Interrupt": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.codex/keyboard-bridge/codex_status_hook.py\"",
+            "commandWindows": "py \"$env:USERPROFILE\\.codex\\keyboard-bridge\\codex_status_hook.py\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}

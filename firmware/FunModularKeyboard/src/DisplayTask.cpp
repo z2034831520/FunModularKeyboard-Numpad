@@ -71,6 +71,30 @@ namespace
         return value;
     }
 
+    const char *CodexEffortText(CodexEffort effort)
+    {
+        switch (effort)
+        {
+        case CodexEffort::EFFORT_MINIMAL:
+            return "MINIMAL";
+        case CodexEffort::EFFORT_LOW:
+            return "LOW";
+        case CodexEffort::EFFORT_MEDIUM:
+            return "MEDIUM";
+        case CodexEffort::EFFORT_HIGH:
+            return "HIGH";
+        case CodexEffort::EFFORT_XHIGH:
+            return "XHIGH";
+        case CodexEffort::EFFORT_MAX:
+            return "MAX";
+        case CodexEffort::EFFORT_ULTRA:
+            return "ULTRA";
+        case CodexEffort::UNKNOWN:
+        default:
+            return "";
+        }
+    }
+
 }
 
 // 获取当前时间并格式化
@@ -283,7 +307,10 @@ void DisplayTask::UpdateCodexRgb(uint32_t now_ms)
         break;
     }
 
+    case CodexStatus::CREATING:
     case CodexStatus::RUNNING:
+    case CodexStatus::PAUSING:
+    case CodexStatus::RESUMING:
     {
         if (codex_effect_last_step_ms_ != 0 && now_ms - codex_effect_last_step_ms_ < 60)
         {
@@ -574,7 +601,8 @@ void DisplayTask::UpdateDisplay(const DisplayMessage &msg)
     case MainCommand::CODEX_STATUS_UPDATE:
     {
         const unsigned task_count = msg.codex_task_count == 0 ? 1U : msg.codex_task_count;
-        char status_text[24]{};
+        const char *effort_text = CodexEffortText(msg.codex_effort);
+        char status_text[32]{};
 
         if (codex_status_ != msg.codex_status)
         {
@@ -584,23 +612,36 @@ void DisplayTask::UpdateDisplay(const DisplayMessage &msg)
         switch (msg.codex_status)
         {
         case CodexStatus::READY:
-            ui_MainScreen_set_codex_status("CODEX READY", 0x55D6E8);
+            snprintf(status_text, sizeof(status_text), "CODEX READY%s%s", effort_text[0] ? " " : "", effort_text);
+            ui_MainScreen_set_codex_status(status_text, 0x55D6E8);
+            break;
+        case CodexStatus::CREATING:
+            snprintf(status_text, sizeof(status_text), "CREATING%s%s", effort_text[0] ? " " : "", effort_text);
+            ui_MainScreen_set_codex_status(status_text, 0x4A90E2);
             break;
         case CodexStatus::RUNNING:
-            snprintf(status_text, sizeof(status_text), "RUNNING x%u", task_count);
+            snprintf(status_text, sizeof(status_text), "RUNNING x%u%s%s", task_count, effort_text[0] ? " " : "", effort_text);
             ui_MainScreen_set_codex_status(status_text, 0x4A90E2);
             break;
         case CodexStatus::WAITING_APPROVAL:
-            snprintf(status_text, sizeof(status_text), "APPROVAL x%u", task_count);
+            snprintf(status_text, sizeof(status_text), "APPROVAL x%u%s%s", task_count, effort_text[0] ? " " : "", effort_text);
             ui_MainScreen_set_codex_status(status_text, 0xFFAA33);
             break;
         case CodexStatus::WAITING_INPUT:
-            snprintf(status_text, sizeof(status_text), "WAITING x%u", task_count);
+            snprintf(status_text, sizeof(status_text), "WAITING x%u%s%s", task_count, effort_text[0] ? " " : "", effort_text);
             ui_MainScreen_set_codex_status(status_text, 0xB266FF);
             break;
-        case CodexStatus::PAUSED:
-            snprintf(status_text, sizeof(status_text), "PAUSED x%u", task_count);
+        case CodexStatus::PAUSING:
+            snprintf(status_text, sizeof(status_text), "PAUSING%s%s", effort_text[0] ? " " : "", effort_text);
             ui_MainScreen_set_codex_status(status_text, 0xFFC040);
+            break;
+        case CodexStatus::PAUSED:
+            snprintf(status_text, sizeof(status_text), "PAUSED x%u%s%s", task_count, effort_text[0] ? " " : "", effort_text);
+            ui_MainScreen_set_codex_status(status_text, 0xFFC040);
+            break;
+        case CodexStatus::RESUMING:
+            snprintf(status_text, sizeof(status_text), "RESUMING%s%s", effort_text[0] ? " " : "", effort_text);
+            ui_MainScreen_set_codex_status(status_text, 0x4A90E2);
             break;
         case CodexStatus::DONE:
             ui_MainScreen_set_codex_status("CODEX DONE", 0x55CC77);

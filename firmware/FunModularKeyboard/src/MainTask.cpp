@@ -28,6 +28,9 @@ namespace
     constexpr const char *kMediaVolumeUp = "KEY_MEDIA_VOLUME_UP";
     constexpr const char *kMediaVolumeDown = "KEY_MEDIA_VOLUME_DOWN";
     constexpr const char *kMediaMute = "KEY_MEDIA_MUTE";
+    constexpr const char *kCodexNewTaskFunctionKey = "KEY_FUNCTION_CODEX_NEW_TASK";
+    constexpr const char *kCodexPauseFunctionKey = "KEY_FUNCTION_CODEX_PAUSE";
+    constexpr const char *kCodexResumeFunctionKey = "KEY_FUNCTION_CODEX_RESUME";
     constexpr const char *kCodexAnalyzeFunctionKey = "KEY_FUNCTION_CODEX_ANALYZE";
     constexpr const char *kCodexReviewFunctionKey = "KEY_FUNCTION_CODEX_REVIEW";
     constexpr const char *kCodexAcceptFunctionKey = "KEY_FUNCTION_CODEX_ACCEPT";
@@ -63,6 +66,21 @@ namespace
 
     bool lookupCodexTask(const String &functionKey, CodexTask &task)
     {
+        if (functionKey.equalsIgnoreCase(kCodexNewTaskFunctionKey))
+        {
+            task = CodexTask::NEW_TASK;
+            return true;
+        }
+        if (functionKey.equalsIgnoreCase(kCodexPauseFunctionKey))
+        {
+            task = CodexTask::PAUSE;
+            return true;
+        }
+        if (functionKey.equalsIgnoreCase(kCodexResumeFunctionKey))
+        {
+            task = CodexTask::RESUME;
+            return true;
+        }
         if (functionKey.equalsIgnoreCase(kCodexAnalyzeFunctionKey))
         {
             task = CodexTask::ANALYZE;
@@ -999,6 +1017,37 @@ void MainTask::HandleRotaryAction(RotaryAction action, void *context)
         return;
     }
 
+    if (action == RotaryAction::LONG_PRESS)
+    {
+        if (!task->codexBridge_.IsHostConnected())
+        {
+            LOG_WARNING("Codex", "Cannot enter Codex rotary mode: bridge disconnected");
+            return;
+        }
+        task->rotaryCodexMode_ = !task->rotaryCodexMode_;
+        LOG_INFO("Codex", "Rotary mode: %s", task->rotaryCodexMode_ ? "reasoning effort" : "volume");
+        if (task->rotaryCodexMode_)
+        {
+            task->codexBridge_.QueueTask(CodexTask::EFFORT_CURRENT);
+        }
+        return;
+    }
+
+    if (task->rotaryCodexMode_)
+    {
+        CodexTask codexTask = CodexTask::EFFORT_CURRENT;
+        if (action == RotaryAction::CLOCKWISE)
+        {
+            codexTask = CodexTask::EFFORT_NEXT;
+        }
+        else if (action == RotaryAction::COUNTERCLOCKWISE)
+        {
+            codexTask = CodexTask::EFFORT_PREVIOUS;
+        }
+        task->codexBridge_.QueueTask(codexTask);
+        return;
+    }
+
     switch (action)
     {
     case RotaryAction::CLOCKWISE:
@@ -1010,15 +1059,17 @@ void MainTask::HandleRotaryAction(RotaryAction action, void *context)
     case RotaryAction::CLICK:
         task->sendMediaKey(kMediaMute);
         break;
+    case RotaryAction::LONG_PRESS:
+        break;
     }
 }
 
-void MainTask::HandleCodexStatus(CodexStatus status, uint8_t task_count, void *context)
+void MainTask::HandleCodexStatus(CodexStatus status, uint8_t task_count, CodexEffort effort, void *context)
 {
     MainTask *task = static_cast<MainTask *>(context);
     if (task != nullptr)
     {
-        task->SendCodexStatusUpdate(status, task_count);
+        task->SendCodexStatusUpdate(status, task_count, effort);
     }
 }
 
@@ -1246,11 +1297,12 @@ void MainTask::SendAsrRecordingState(bool isRecording)
     }
 }
 
-void MainTask::SendCodexStatusUpdate(CodexStatus status, uint8_t task_count)
+void MainTask::SendCodexStatusUpdate(CodexStatus status, uint8_t task_count, CodexEffort effort)
 {
     DisplayMessage msg{};
     msg.type = uint8_t(MainCommand::CODEX_STATUS_UPDATE);
     msg.codex_status = status;
+    msg.codex_effort = effort;
     msg.codex_task_count = task_count;
     if (message_queue_ != nullptr && xQueueSend(message_queue_, &msg, 0) != pdPASS)
     {

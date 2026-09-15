@@ -18,6 +18,7 @@ void CodexSerialBridge::Begin()
     taskCount_ = 0;
     lastHostMessageMs_ = 0;
     hostSeen_ = false;
+    effort_ = CodexEffort::UNKNOWN;
     SetStatus(CodexStatus::DISCONNECTED);
 }
 
@@ -139,49 +140,66 @@ void CodexSerialBridge::ProcessLine(const char *line)
     std::memcpy(statusValue, value, valueLength);
 
     uint8_t taskCount = 1;
+    CodexEffort effort = CodexEffort::UNKNOWN;
     if (countSeparator != nullptr)
     {
         char *end = nullptr;
         const unsigned long parsedCount = std::strtoul(countSeparator + 1, &end, 10);
-        if (end != countSeparator + 1 && *end == '\0' && parsedCount > 0)
+        if (end != countSeparator + 1 && (*end == '\0' || *end == '|') && parsedCount > 0)
         {
             taskCount = static_cast<uint8_t>(parsedCount > 255 ? 255 : parsedCount);
+        }
+        if (end != nullptr && *end == '|' && end[1] != '\0')
+        {
+            effort = ParseEffort(end + 1);
         }
     }
 
     bool recognizedStatus = true;
     if (std::strcmp(statusValue, "READY") == 0)
     {
-        SetStatus(CodexStatus::READY, taskCount);
+        SetStatus(CodexStatus::READY, taskCount, effort);
+    }
+    else if (std::strcmp(statusValue, "CREATING") == 0)
+    {
+        SetStatus(CodexStatus::CREATING, taskCount, effort);
     }
     else if (std::strcmp(statusValue, "RUNNING") == 0)
     {
-        SetStatus(CodexStatus::RUNNING, taskCount);
+        SetStatus(CodexStatus::RUNNING, taskCount, effort);
     }
     else if (std::strcmp(statusValue, "APPROVAL") == 0)
     {
-        SetStatus(CodexStatus::WAITING_APPROVAL, taskCount);
+        SetStatus(CodexStatus::WAITING_APPROVAL, taskCount, effort);
     }
     else if (std::strcmp(statusValue, "WAITING") == 0)
     {
-        SetStatus(CodexStatus::WAITING_INPUT, taskCount);
+        SetStatus(CodexStatus::WAITING_INPUT, taskCount, effort);
+    }
+    else if (std::strcmp(statusValue, "PAUSING") == 0)
+    {
+        SetStatus(CodexStatus::PAUSING, taskCount, effort);
     }
     else if (std::strcmp(statusValue, "PAUSED") == 0)
     {
-        SetStatus(CodexStatus::PAUSED, taskCount);
+        SetStatus(CodexStatus::PAUSED, taskCount, effort);
+    }
+    else if (std::strcmp(statusValue, "RESUMING") == 0)
+    {
+        SetStatus(CodexStatus::RESUMING, taskCount, effort);
     }
     else if (std::strcmp(statusValue, "DONE") == 0)
     {
-        SetStatus(CodexStatus::DONE, taskCount);
+        SetStatus(CodexStatus::DONE, taskCount, effort);
     }
     else if (std::strcmp(statusValue, "ERROR") == 0)
     {
-        SetStatus(CodexStatus::ERROR, taskCount);
+        SetStatus(CodexStatus::ERROR, taskCount, effort);
     }
     else if (std::strcmp(statusValue, "DISCONNECTED") == 0)
     {
         hostSeen_ = false;
-        SetStatus(CodexStatus::DISCONNECTED, taskCount);
+        SetStatus(CodexStatus::DISCONNECTED, taskCount, effort);
     }
     else
     {
@@ -190,8 +208,16 @@ void CodexSerialBridge::ProcessLine(const char *line)
 
     if (recognizedStatus)
     {
-        char acknowledgement[40]{};
-        snprintf(acknowledgement, sizeof(acknowledgement), "CX>STATUS|%s|%u", statusValue, taskCount);
+        char acknowledgement[56]{};
+        const char *effortText = EffortToText(effort_);
+        if (effortText[0] != '\0')
+        {
+            snprintf(acknowledgement, sizeof(acknowledgement), "CX>STATUS|%s|%u|%s", statusValue, taskCount, effortText);
+        }
+        else
+        {
+            snprintf(acknowledgement, sizeof(acknowledgement), "CX>STATUS|%s|%u", statusValue, taskCount);
+        }
         SendLine(acknowledgement);
     }
 }
@@ -236,18 +262,20 @@ void CodexSerialBridge::SendLine(const char *line)
     }
 }
 
-void CodexSerialBridge::SetStatus(CodexStatus status, uint8_t task_count)
+void CodexSerialBridge::SetStatus(CodexStatus status, uint8_t task_count, CodexEffort effort)
 {
-    if (status_ == status && taskCountStatus_ == task_count)
+    const CodexEffort effectiveEffort = effort == CodexEffort::UNKNOWN ? effort_ : effort;
+    if (status_ == status && taskCountStatus_ == task_count && effort_ == effectiveEffort)
     {
         return;
     }
 
     status_ = status;
     taskCountStatus_ = task_count;
+    effort_ = effectiveEffort;
     if (statusCallback_ != nullptr)
     {
-        statusCallback_(status_, taskCountStatus_, statusContext_);
+        statusCallback_(status_, taskCountStatus_, effort_, statusContext_);
     }
 }
 
@@ -255,6 +283,12 @@ const char *CodexSerialBridge::TaskToLine(CodexTask task)
 {
     switch (task)
     {
+    case CodexTask::NEW_TASK:
+        return "CX>TASK|NEW";
+    case CodexTask::PAUSE:
+        return "CX>ACTION|PAUSE";
+    case CodexTask::RESUME:
+        return "CX>ACTION|RESUME";
     case CodexTask::ANALYZE:
         return "CX>TASK|ANALYZE";
     case CodexTask::REVIEW:
@@ -265,6 +299,59 @@ const char *CodexSerialBridge::TaskToLine(CodexTask task)
         return "CX>ACTION|DECLINE";
     case CodexTask::INTERRUPT_TURN:
         return "CX>ACTION|INTERRUPT";
+    case CodexTask::EFFORT_NEXT:
+        return "CX>ACTION|EFFORT_NEXT";
+    case CodexTask::EFFORT_PREVIOUS:
+        return "CX>ACTION|EFFORT_PREVIOUS";
+    case CodexTask::EFFORT_CURRENT:
+        return "CX>ACTION|EFFORT_CURRENT";
     }
     return nullptr;
+}
+
+CodexEffort CodexSerialBridge::ParseEffort(const char *value)
+{
+    if (value == nullptr)
+    {
+        return CodexEffort::UNKNOWN;
+    }
+    if (std::strcmp(value, "MINIMAL") == 0)
+        return CodexEffort::EFFORT_MINIMAL;
+    if (std::strcmp(value, "LOW") == 0)
+        return CodexEffort::EFFORT_LOW;
+    if (std::strcmp(value, "MEDIUM") == 0)
+        return CodexEffort::EFFORT_MEDIUM;
+    if (std::strcmp(value, "HIGH") == 0)
+        return CodexEffort::EFFORT_HIGH;
+    if (std::strcmp(value, "XHIGH") == 0)
+        return CodexEffort::EFFORT_XHIGH;
+    if (std::strcmp(value, "MAX") == 0)
+        return CodexEffort::EFFORT_MAX;
+    if (std::strcmp(value, "ULTRA") == 0)
+        return CodexEffort::EFFORT_ULTRA;
+    return CodexEffort::UNKNOWN;
+}
+
+const char *CodexSerialBridge::EffortToText(CodexEffort effort)
+{
+    switch (effort)
+    {
+    case CodexEffort::EFFORT_MINIMAL:
+        return "MINIMAL";
+    case CodexEffort::EFFORT_LOW:
+        return "LOW";
+    case CodexEffort::EFFORT_MEDIUM:
+        return "MEDIUM";
+    case CodexEffort::EFFORT_HIGH:
+        return "HIGH";
+    case CodexEffort::EFFORT_XHIGH:
+        return "XHIGH";
+    case CodexEffort::EFFORT_MAX:
+        return "MAX";
+    case CodexEffort::EFFORT_ULTRA:
+        return "ULTRA";
+    case CodexEffort::UNKNOWN:
+    default:
+        return "";
+    }
 }

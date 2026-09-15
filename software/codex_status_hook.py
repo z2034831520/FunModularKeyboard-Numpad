@@ -53,6 +53,7 @@ def send_event(payload: dict[str, Any], host: str, port: int) -> None:
         "hook_event_name": event,
         "session_id": payload.get("session_id"),
         "turn_id": payload.get("turn_id"),
+        "cwd": payload.get("cwd"),
         "sent_at": time.time(),
     }
     encoded = json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8")

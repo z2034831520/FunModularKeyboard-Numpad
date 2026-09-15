@@ -279,10 +279,10 @@ private:
     void sendMediaKey(const char *key);
     static void HandleRotaryAction(RotaryAction action, void *context);
     uint32_t HandleCodexKeyActions(uint32_t pressed_edges);
-    static void HandleCodexStatus(CodexStatus status, uint8_t task_count, void *context);
+    static void HandleCodexStatus(CodexStatus status, uint8_t task_count, CodexEffort effort, void *context);
     void SendDisplayKeyInput(uint32_t key_value);
     void SendAsrRecordingState(bool isRecording);
-    void SendCodexStatusUpdate(CodexStatus status, uint8_t task_count);
+    void SendCodexStatusUpdate(CodexStatus status, uint8_t task_count, CodexEffort effort);
     void SendBatteryStatusUpdate();
     void SendDisplaySetting(const DeviceSettings &setting);
     // void SendSpectrumDisplay(float* bands, int numBands);
@@ -305,6 +305,7 @@ private:
     Speaker speaker_;
     RotaryEncoder rotaryEncoder_;
     CodexSerialBridge codexBridge_;
+    bool rotaryCodexMode_{false};
     // Mic mic_;
     bool isNeedUpdateDisplay{0};
     uint32_t lastStableKeyState_{0};

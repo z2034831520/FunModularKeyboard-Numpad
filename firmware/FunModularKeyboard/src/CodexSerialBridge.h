@@ -6,7 +6,7 @@
 class CodexSerialBridge
 {
 public:
-    using StatusCallback = void (*)(CodexStatus status, uint8_t task_count, void *context);
+    using StatusCallback = void (*)(CodexStatus status, uint8_t task_count, CodexEffort effort, void *context);
 
     void Begin();
     void Loop();
@@ -23,8 +23,10 @@ private:
     void ProcessLine(const char *line);
     void FlushOneTask();
     void SendLine(const char *line);
-    void SetStatus(CodexStatus status, uint8_t task_count = 1);
+    void SetStatus(CodexStatus status, uint8_t task_count = 1, CodexEffort effort = CodexEffort::UNKNOWN);
     static const char *TaskToLine(CodexTask task);
+    static CodexEffort ParseEffort(const char *value);
+    static const char *EffortToText(CodexEffort effort);
 
     StatusCallback statusCallback_{nullptr};
     void *statusContext_{nullptr};
@@ -36,6 +38,7 @@ private:
     size_t taskCount_{0};
     uint32_t lastHostMessageMs_{0};
     CodexStatus status_{CodexStatus::DISCONNECTED};
+    CodexEffort effort_{CodexEffort::UNKNOWN};
     uint8_t taskCountStatus_{1};
     bool hostSeen_{false};
 };

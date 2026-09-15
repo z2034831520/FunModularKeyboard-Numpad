@@ -7,6 +7,7 @@ enum class RotaryAction : uint8_t
     CLOCKWISE,
     COUNTERCLOCKWISE,
     CLICK,
+    LONG_PRESS,
 };
 
 class RotaryEncoder
@@ -29,6 +30,8 @@ private:
     int8_t rotationAccumulator_{0};
     bool lastRawButtonPressed_{false};
     bool stableButtonPressed_{false};
+    bool longPressEmitted_{false};
     uint32_t buttonChangedAtMs_{0};
+    uint32_t buttonPressedAtMs_{0};
     bool initialized_{false};
 };

@@ -1,4 +1,5 @@
 ui.c
+ui_BootScreen.c
 ui_MainScreen.c
 ui_StatusBar.c
 ui_font_BebasNeueFont48.c

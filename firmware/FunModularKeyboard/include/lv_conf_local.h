@@ -23,7 +23,7 @@
 #define LV_USE_CANVAS 0
 #define LV_USE_CHECKBOX 0
 #define LV_USE_DROPDOWN 0
-#define LV_USE_IMG 0
+#define LV_USE_IMG 1
 #define LV_USE_LABEL 1
 #define LV_USE_LINE 0
 #define LV_USE_ROLLER 0
@@ -56,7 +56,7 @@
 
 #define LV_USE_BMP 0
 #define LV_USE_SJPG 0
-#define LV_USE_GIF 0
+#define LV_USE_GIF 1
 #define LV_USE_QRCODE 0
 #define LV_USE_FREETYPE 0
 #define LV_USE_TINY_TTF 0

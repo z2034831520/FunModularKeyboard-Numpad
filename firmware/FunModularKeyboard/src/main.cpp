@@ -33,6 +33,9 @@ void printSystemTime()
 
 void setup()
 {
+    // Disable the LCD backlight before logging, SPIFFS, WiFi and BLE startup.
+    lvgl_hold_backlight_off();
+
     SystemTime::ConfigureChinaTimeZone();
 
     // Serial.begin(115200);

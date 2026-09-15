@@ -26,11 +26,11 @@ void ui_init(void)
     lv_disp_set_theme(dispp, theme);
     ui_MainScreen_screen_init();
     ui_StatusBar_init();
-
-    lv_disp_load_scr(ui_MainScreen);
+    ui_BootScreen_screen_init();
 }
 
 void ui_destroy(void)
 {
+    ui_BootScreen_screen_destroy();
     ui_MainScreen_screen_destroy();
 }

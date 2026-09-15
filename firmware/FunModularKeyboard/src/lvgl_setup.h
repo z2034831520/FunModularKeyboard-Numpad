@@ -6,6 +6,8 @@
 #define DISP_BUF_SIZE (428 * 142 / 10) // 调整缓冲区大小
 
 void lvgl_setup();
+void lvgl_hold_backlight_off();
+void lvgl_enable_panel_output();
 void lvgl_set_backlight_brightness(uint8_t brightness_percent);
 void lvgl_register_spiffs_fs();
 void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p);

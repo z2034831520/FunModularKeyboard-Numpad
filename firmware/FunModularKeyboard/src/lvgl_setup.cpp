@@ -40,6 +40,7 @@ namespace
         delay(120);
 
         s_lcd.startWrite();
+        nv3007_write_command(0x28, nullptr, 0); // Display off during setup
         size_t position = 0;
         while (position < nv3007::kInitCommandsSize)
         {
@@ -55,9 +56,7 @@ namespace
         s_lcd.startWrite();
         const uint8_t landscape_rotation = 0x60; // MX | MV | RGB
         nv3007_write_command(0x36, &landscape_rotation, 1);
-        nv3007_write_command(0x29, nullptr, 0); // Display on
         s_lcd.endWrite();
-        delay(20);
     }
 
     String lvgl_spiffs_real_path(const char *path)
@@ -143,6 +142,27 @@ namespace
 
 }
 
+void lvgl_hold_backlight_off()
+{
+    // GPIO37 drives an active-low PNP switch. Hold it inactive before the
+    // display stack is ready so uninitialized panel memory is never exposed.
+    pinMode(display_config::kBacklightPin, OUTPUT);
+    digitalWrite(display_config::kBacklightPin, display_config::kBacklightOffLevel);
+}
+
+void lvgl_enable_panel_output()
+{
+    if (!s_tft_ready)
+    {
+        return;
+    }
+
+    s_lcd.startWrite();
+    nv3007_write_command(0x29, nullptr, 0); // Display on after first frame
+    s_lcd.endWrite();
+    delay(20);
+}
+
 void lvgl_set_backlight_brightness(uint8_t brightness_percent)
 {
     const uint8_t clamped = brightness_percent > 100 ? 100 : brightness_percent;
@@ -198,8 +218,7 @@ void lvgl_register_spiffs_fs()
 void lvgl_setup()
 {
     // 1. 初始化显示驱动
-    pinMode(display_config::kBacklightPin, OUTPUT);
-    digitalWrite(display_config::kBacklightPin, display_config::kBacklightOffLevel);
+    lvgl_hold_backlight_off();
     s_lcd.begin();
     nv3007_initialize();
     s_tft_ready = true;
@@ -208,7 +227,6 @@ void lvgl_setup()
                   display_config::kDisplayWidth,
                   display_config::kDisplayHeight,
                   (long)display_config::kSpiFrequency);
-    lvgl_set_backlight_brightness(100);
 
     // 2. 初始化 LVGL
     lv_init();

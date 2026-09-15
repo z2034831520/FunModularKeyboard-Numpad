@@ -430,6 +430,10 @@ void DisplayTask::run()
     // Display an unknown value until the first real ADC reading arrives.
     status_bar_set_battery_level(255);
     status_bar_set_wifi_strength(-200);
+    // Draw the boot screen and the first GIF frame before revealing the LCD.
+    lv_refr_now(nullptr);
+    lvgl_enable_panel_output();
+    lvgl_set_backlight_brightness(100);
     // 麦克风
     while (1)
     {

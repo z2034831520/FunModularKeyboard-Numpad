@@ -4,12 +4,6 @@
 #include "Configuration.h"
 #include "CodexProtocol.h"
 
-struct BatteryStatusInfo
-{
-    uint16_t voltage_mv{0};
-    uint8_t percent{0};
-};
-
 // Only the settings consumed by the remaining time page and status/RGB logic.
 struct DisplaySettingsInfo
 {
@@ -30,7 +24,7 @@ struct DisplayMessage
     CodexStatus codex_status{CodexStatus::DISCONNECTED};
     CodexEffort codex_effort{CodexEffort::UNKNOWN};
     uint8_t codex_task_count{1};
-    BatteryStatusInfo battery_status;
+    bool codex_effort_mode{false};
     DisplaySettingsInfo setting;
 };
 
@@ -40,6 +34,5 @@ enum class MainCommand
     SETTING_UPDATE,
     SYSTEM_RESET,
     ASR_RECORDING_STATE,
-    BATTERY_STATUS_UPDATE,
     CODEX_STATUS_UPDATE,
 };

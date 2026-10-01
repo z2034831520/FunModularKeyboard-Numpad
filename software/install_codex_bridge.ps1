@@ -22,6 +22,9 @@ if (Test-Path -LiteralPath $globalHooksPath) {
 
 New-Item -ItemType Directory -Path $installRoot -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'codex_bridge.py') -Destination $installRoot -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'codex_desktop.py') -Destination $installRoot -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'codex_desktop_probe.ps1') -Destination $installRoot -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'show_codex_effort.ps1') -Destination $installRoot -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'codex_status_hook.py') -Destination $installRoot -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'codex_tasks.json') -Destination $installRoot -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'requirements-codex-bridge.txt') -Destination $installRoot -Force
@@ -32,13 +35,20 @@ $startScript = Join-Path $installRoot 'start_codex_bridge.ps1'
 $taskArguments = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}" -FallbackProject "{1}"' -f $startScript, $FallbackProject
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $taskArguments
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
-$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
+$settings = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -StartWhenAvailable `
+    -ExecutionTimeLimit ([TimeSpan]::Zero) `
+    -MultipleInstances IgnoreNew `
+    -RestartCount 999 `
+    -RestartInterval (New-TimeSpan -Minutes 1)
 Register-ScheduledTask `
     -TaskName $taskName `
     -Action $action `
     -Trigger $trigger `
     -Settings $settings `
-    -Description 'Starts the global FunModularKeyboard Codex bridge at user logon.' `
+    -Description 'Runs and supervises the global FunModularKeyboard Codex bridge at user logon.' `
     -Force | Out-Null
 
 Write-Output "Installed bridge: $installRoot"

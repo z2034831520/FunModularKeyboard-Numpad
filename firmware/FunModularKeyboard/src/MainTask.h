@@ -16,7 +16,6 @@
 #include "LogManager.h"
 #include "IKeyboard.h"
 #include "VoiceRecognizer.h"
-#include "BatteryMonitor.h"
 
 class MainTask : public Task<MainTask>
 {
@@ -283,7 +282,6 @@ private:
     void SendDisplayKeyInput(uint32_t key_value);
     void SendAsrRecordingState(bool isRecording);
     void SendCodexStatusUpdate(CodexStatus status, uint8_t task_count, CodexEffort effort);
-    void SendBatteryStatusUpdate();
     void SendDisplaySetting(const DeviceSettings &setting);
     // void SendSpectrumDisplay(float* bands, int numBands);
     // void sendDisplayUpdate();
@@ -297,7 +295,6 @@ private:
     bool SyncTimeBeforeBluetoothStart();
     void reconcileVoiceRuntimeState();
     MatrixScanner scanner_;
-    BatteryMonitor batteryMonitor_;
     std::unique_ptr<IKeyboard> currentKeyboard_{nullptr};
     Configuration::WORK_MODE currentWorkMode_;
     Configuration &configuration_;
@@ -309,13 +306,17 @@ private:
     // Mic mic_;
     bool isNeedUpdateDisplay{0};
     uint32_t lastStableKeyState_{0};
-    uint32_t lastBatteryStatusMs_{0};
     bool voiceRecognitionBusy_{false};
     bool voiceCaptureActive_{false};
     bool voiceRecognizerStarted_{false};
     uint32_t voiceTriggerBit_{1UL << 15};
     bool wifiReconnectActive_{false};
     bool wifiWasConnected_{false};
+    bool wifiEventRegistered_{false};
+    size_t wifiDisconnectEventHandlerId_{0};
+    std::atomic<uint16_t> wifiLastDisconnectReason_{0};
+    std::atomic<uint32_t> wifiDisconnectEventCount_{0};
+    uint32_t wifiReportedDisconnectEventCount_{0};
     uint32_t wifiConnectAttemptStartedMs_{0};
     uint32_t wifiNextRetryAtMs_{0};
     bool timeSyncPending_{false};

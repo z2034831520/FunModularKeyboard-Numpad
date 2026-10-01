@@ -40,9 +40,6 @@ namespace
     constexpr uint8_t kBoost5VEnablePin = 3;
     constexpr uint32_t kWifiRetryIntervalMs = 5000;
     constexpr uint32_t kWifiConnectTimeoutMs = 10000;
-    // WiFi.status() can retain NO_SSID/CONNECT_FAILED from the previous scan
-    // briefly after WiFi.begin(). Do not abort the new scan on that stale value.
-    constexpr uint32_t kWifiFailureStatusGraceMs = 3000;
     constexpr uint32_t kTimeSyncCheckIntervalMs = 500;
     constexpr uint32_t kTimeSyncRestartIntervalMs = 30000;
     constexpr uint32_t kBluetoothStartupTimeSyncTimeoutMs = 10000;
@@ -154,17 +151,17 @@ namespace
 
     constexpr bool shouldFinishWiFiAttempt(wl_status_t status, uint32_t elapsedMs)
     {
-        return elapsedMs >= kWifiConnectTimeoutMs ||
-               (elapsedMs >= kWifiFailureStatusGraceMs &&
-                (status == WL_CONNECT_FAILED ||
-                 status == WL_NO_SHIELD ||
-                 status == WL_NO_SSID_AVAIL));
+        // begin() returns shared asynchronous status, possibly from an earlier
+        // attempt. Give every new scan its full window before cancelling it.
+        return status != WL_CONNECTED && elapsedMs >= kWifiConnectTimeoutMs;
     }
 
     static_assert(!shouldFinishWiFiAttempt(WL_NO_SSID_AVAIL, 0),
                   "A stale NO_SSID result must not cancel a new WiFi scan");
-    static_assert(shouldFinishWiFiAttempt(WL_NO_SSID_AVAIL, kWifiFailureStatusGraceMs),
-                  "A persistent terminal WiFi result must eventually be retried");
+    static_assert(!shouldFinishWiFiAttempt(WL_CONNECT_FAILED, 4000),
+                  "A stale CONNECT_FAILED result must not cancel a new attempt");
+    static_assert(shouldFinishWiFiAttempt(WL_NO_SSID_AVAIL, kWifiConnectTimeoutMs),
+                  "A failed WiFi attempt must eventually be retried");
 
     void logHeapSnapshot(const char *stage)
     {
@@ -263,6 +260,25 @@ bool MainTask::ConnectToWiFi(const String &ssid, const String &password)
         return true;
     }
 
+    if (!wifiEventRegistered_)
+    {
+        // The event callback runs on the WiFi event task: only publish atomic
+        // data here. Logging and all connection actions stay on MainTask.
+        wifiDisconnectEventHandlerId_ = WiFi.onEvent(
+            [this](WiFiEvent_t, WiFiEventInfo_t info)
+            {
+                const uint16_t reason = info.wifi_sta_disconnected.reason;
+                // Do not overwrite a useful error with our own retry cleanup.
+                if (reason != WIFI_REASON_ASSOC_LEAVE)
+                {
+                    wifiLastDisconnectReason_.store(reason);
+                    wifiDisconnectEventCount_.fetch_add(1);
+                }
+            },
+            ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+        wifiEventRegistered_ = true;
+    }
+
     WiFi.persistent(false);
     WiFi.setAutoReconnect(true);
     WiFi.setSleep(false);
@@ -270,18 +286,12 @@ bool MainTask::ConnectToWiFi(const String &ssid, const String &password)
     WiFi.disconnect(false, false);
     delay(20);
 
-    const wl_status_t beginStatus = WiFi.begin(ssidTrimmed.c_str(), passwordTrimmed.c_str());
+    // Do not interpret begin()'s return value as the outcome of this new
+    // asynchronous attempt. The reconnect state machine observes it later.
+    WiFi.begin(ssidTrimmed.c_str(), passwordTrimmed.c_str());
     wifiReconnectActive_ = true;
     wifiConnectAttemptStartedMs_ = millis();
     wifiNextRetryAtMs_ = wifiConnectAttemptStartedMs_ + kWifiRetryIntervalMs;
-
-    if (beginStatus == WL_CONNECT_FAILED || beginStatus == WL_NO_SHIELD)
-    {
-        LOG_ERROR("Log", "WiFi begin failed immediately, status=%s(%d)", wifiStatusToText(beginStatus), beginStatus);
-        WiFi.disconnect(false, false);
-        wifiConnectAttemptStartedMs_ = 0;
-        return false;
-    }
 
     LOG_INFO("Log", "WiFi connect attempt started: ssid=%s", ssidTrimmed.c_str());
     return true;
@@ -334,6 +344,19 @@ void MainTask::onWiFiConnected()
 
 void MainTask::processWiFiReconnect(uint32_t nowMs)
 {
+    const uint32_t eventCount = wifiDisconnectEventCount_.load();
+    if (eventCount != wifiReportedDisconnectEventCount_)
+    {
+        wifiReportedDisconnectEventCount_ = eventCount;
+        const uint16_t reason = wifiLastDisconnectReason_.load();
+        if (reason != WIFI_REASON_ASSOC_LEAVE)
+        {
+            LOG_WARNING("Log", "WiFi disconnect event: reason=%u(%s)",
+                        static_cast<unsigned>(reason),
+                        WiFi.disconnectReasonName(static_cast<wifi_err_reason_t>(reason)));
+        }
+    }
+
     if (!configuration_.settings_.wifi_switch || currentWorkMode_ == Configuration::BLUETOOTH_KEYBOARD_MODE)
     {
         if (wifiWasConnected_ || WiFi.getMode() != WIFI_OFF)
@@ -375,10 +398,11 @@ void MainTask::processWiFiReconnect(uint32_t nowMs)
         const uint32_t attemptElapsedMs = nowMs - wifiConnectAttemptStartedMs_;
         if (shouldFinishWiFiAttempt(status, attemptElapsedMs))
         {
-            LOG_WARNING("Log", "WiFi attempt failed after %u ms, status=%s(%d)",
+            LOG_WARNING("Log", "WiFi attempt failed after %u ms, status=%s(%d), last_disconnect_reason=%u",
                         (unsigned)attemptElapsedMs,
                         wifiStatusToText(status),
-                        status);
+                        status,
+                        static_cast<unsigned>(wifiLastDisconnectReason_.load()));
             WiFi.disconnect(false, false);
             wifiConnectAttemptStartedMs_ = 0;
             wifiNextRetryAtMs_ = nowMs + kWifiRetryIntervalMs;
@@ -827,6 +851,10 @@ MainTask::MainTask(const uint8_t task_core, Configuration &configuration)
 
 MainTask::~MainTask()
 {
+    if (wifiEventRegistered_)
+    {
+        WiFi.removeEvent(wifiDisconnectEventHandlerId_);
+    }
 }
 
 void MainTask::setBoost5VEnabled(bool enabled)
@@ -849,25 +877,6 @@ void MainTask::applyPowerMode(Configuration::POWER_MODE mode)
 {
     const bool enableBoost5V = (mode == Configuration::NORMAL_POWER_MODE);
     setBoost5VEnabled(enableBoost5V);
-}
-
-void MainTask::SendBatteryStatusUpdate()
-{
-    const BatteryReading reading = batteryMonitor_.read();
-
-    DisplayMessage msg{};
-    msg.type = uint8_t(MainCommand::BATTERY_STATUS_UPDATE);
-    msg.battery_status.voltage_mv = reading.voltage_mv;
-    msg.battery_status.percent = reading.percent;
-
-    LOG_DEBUG("Battery", "Voltage: %u mV, level: %u%%",
-              (unsigned)reading.voltage_mv,
-              (unsigned)reading.percent);
-
-    if (message_queue_ != nullptr && xQueueSend(message_queue_, &msg, 0) != pdPASS)
-    {
-        LOG_WARNING("Display", "Drop BATTERY_STATUS_UPDATE: display queue full");
-    }
 }
 
 // 从 NTP 同步时间到系统时钟
@@ -1030,6 +1039,10 @@ void MainTask::HandleRotaryAction(RotaryAction action, void *context)
         {
             task->codexBridge_.QueueTask(CodexTask::EFFORT_CURRENT);
         }
+        task->SendCodexStatusUpdate(
+            task->codexBridge_.CurrentStatus(),
+            task->codexBridge_.CurrentTaskCount(),
+            task->codexBridge_.CurrentEffort());
         return;
     }
 
@@ -1043,6 +1056,12 @@ void MainTask::HandleRotaryAction(RotaryAction action, void *context)
         else if (action == RotaryAction::COUNTERCLOCKWISE)
         {
             codexTask = CodexTask::EFFORT_PREVIOUS;
+        }
+        else if (action == RotaryAction::CLICK)
+        {
+            // A short press must make progress. EFFORT_CURRENT only refreshes
+            // the LCD and made every selection after the first look ignored.
+            codexTask = CodexTask::EFFORT_NEXT;
         }
         task->codexBridge_.QueueTask(codexTask);
         return;
@@ -1079,8 +1098,6 @@ void MainTask::run()
     logHeapSnapshot("run:start");
 
     applyPowerMode(static_cast<Configuration::POWER_MODE>(configuration_.settings_.power_mode));
-
-    batteryMonitor_.begin();
 
     // 获取按键的映射
     for (int i = 1; i <= CONFIG_ALL_KEY_NUM; i++)
@@ -1181,8 +1198,6 @@ void MainTask::run()
 
     // 显示配置更新
     SendDisplaySetting(configuration_.settings_);
-    SendBatteryStatusUpdate();
-    lastBatteryStatusMs_ = millis();
 
     // // 麦克风
     // if (!mic_.Begin()) {
@@ -1224,11 +1239,6 @@ void MainTask::run()
         codexBridge_.Loop();
 
         const uint32_t nowMs = millis();
-        if (nowMs - lastBatteryStatusMs_ >= 5000)
-        {
-            lastBatteryStatusMs_ = nowMs;
-            SendBatteryStatusUpdate();
-        }
         processWiFiReconnect(nowMs);
         ProcessTimeSync(nowMs);
 
@@ -1304,6 +1314,7 @@ void MainTask::SendCodexStatusUpdate(CodexStatus status, uint8_t task_count, Cod
     msg.codex_status = status;
     msg.codex_effort = effort;
     msg.codex_task_count = task_count;
+    msg.codex_effort_mode = rotaryCodexMode_;
     if (message_queue_ != nullptr && xQueueSend(message_queue_, &msg, 0) != pdPASS)
     {
         LOG_WARNING("Display", "Drop CODEX_STATUS_UPDATE: display queue full");
@@ -1347,7 +1358,6 @@ void MainTask::SendDisplaySetting(const DeviceSettings &setting)
 // void MainTask::sendDisplayUpdate() {
 //     DisplayMessage msg;
 //     msg.workMode = currentWorkMode_;
-//     //msg.batteryVoltage = readBatteryVoltage();
 //     //msg.isConnected = checkConnectionStatus();
 
 //     // 发送消息到显示任务

@@ -13,6 +13,9 @@ public:
     bool QueueTask(CodexTask task);
     void SetStatusCallback(StatusCallback callback, void *context);
     bool IsHostConnected() const;
+    CodexStatus CurrentStatus() const;
+    CodexEffort CurrentEffort() const;
+    uint8_t CurrentTaskCount() const;
 
 private:
     static constexpr size_t kReceiveBufferSize = 96;

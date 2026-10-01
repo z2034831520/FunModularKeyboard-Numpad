@@ -62,6 +62,21 @@ bool CodexSerialBridge::IsHostConnected() const
     return hostSeen_ && static_cast<uint32_t>(millis() - lastHostMessageMs_) <= kHostTimeoutMs;
 }
 
+CodexStatus CodexSerialBridge::CurrentStatus() const
+{
+    return status_;
+}
+
+CodexEffort CodexSerialBridge::CurrentEffort() const
+{
+    return effort_;
+}
+
+uint8_t CodexSerialBridge::CurrentTaskCount() const
+{
+    return taskCountStatus_;
+}
+
 void CodexSerialBridge::ReadIncoming()
 {
     size_t processed = 0;
@@ -264,15 +279,16 @@ void CodexSerialBridge::SendLine(const char *line)
 
 void CodexSerialBridge::SetStatus(CodexStatus status, uint8_t task_count, CodexEffort effort)
 {
-    const CodexEffort effectiveEffort = effort == CodexEffort::UNKNOWN ? effort_ : effort;
-    if (status_ == status && taskCountStatus_ == task_count && effort_ == effectiveEffort)
+    // A status without an effort means unverified, not "keep the old level".
+    // PING does not update a connected status, so heartbeats still preserve it.
+    if (status_ == status && taskCountStatus_ == task_count && effort_ == effort)
     {
         return;
     }
 
     status_ = status;
     taskCountStatus_ = task_count;
-    effort_ = effectiveEffort;
+    effort_ = effort;
     if (statusCallback_ != nullptr)
     {
         statusCallback_(status_, taskCountStatus_, effort_, statusContext_);

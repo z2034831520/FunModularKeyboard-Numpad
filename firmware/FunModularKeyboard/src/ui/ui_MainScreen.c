@@ -20,7 +20,7 @@ void ui_MainScreen_screen_init(void)
     lv_obj_set_pos(ui_LabelTime, -18, -24);
     lv_obj_set_align(ui_LabelTime, LV_ALIGN_CENTER);
     lv_label_set_text(ui_LabelTime, "10:34");
-    lv_obj_set_style_text_color(ui_LabelTime, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_color(ui_LabelTime, lv_color_hex(0x55D6E8), 0);
     lv_obj_set_style_text_font(ui_LabelTime, &ui_font_BebasNeueFont86, 0);
 
     ui_LabelData = lv_label_create(ui_MainScreen);
@@ -28,7 +28,7 @@ void ui_MainScreen_screen_init(void)
     lv_obj_set_pos(ui_LabelData, 58, 36);
     lv_obj_set_align(ui_LabelData, LV_ALIGN_CENTER);
     lv_label_set_text(ui_LabelData, "SEP 05");
-    lv_obj_set_style_text_color(ui_LabelData, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_color(ui_LabelData, lv_color_hex(0xFFAA33), 0);
     lv_obj_set_style_text_font(ui_LabelData, &ui_font_BebasNeueFont36, 0);
 
     ui_LabelSecond = lv_label_create(ui_MainScreen);
@@ -36,7 +36,7 @@ void ui_MainScreen_screen_init(void)
     lv_obj_set_pos(ui_LabelSecond, 79, -12);
     lv_obj_set_align(ui_LabelSecond, LV_ALIGN_CENTER);
     lv_label_set_text(ui_LabelSecond, "56");
-    lv_obj_set_style_text_color(ui_LabelSecond, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_color(ui_LabelSecond, lv_color_hex(0x4A90E2), 0);
     lv_obj_set_style_text_font(ui_LabelSecond, &ui_font_BebasNeueFont48, 0);
 
     ui_LabelWeek = lv_label_create(ui_MainScreen);
@@ -44,7 +44,7 @@ void ui_MainScreen_screen_init(void)
     lv_obj_set_pos(ui_LabelWeek, -40, 36);
     lv_obj_set_align(ui_LabelWeek, LV_ALIGN_CENTER);
     lv_label_set_text(ui_LabelWeek, "MONDAY");
-    lv_obj_set_style_text_color(ui_LabelWeek, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_color(ui_LabelWeek, lv_color_hex(0x55CC77), 0);
     lv_obj_set_style_text_font(ui_LabelWeek, &ui_font_BebasNeueFont36, 0);
 
     ui_LabelWorkmode = lv_label_create(ui_MainScreen);

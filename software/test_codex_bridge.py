@@ -18,6 +18,7 @@ class CodexHookStateTests(unittest.TestCase):
                 project=Path.cwd(),
                 codex_bin="codex",
                 open_app=False,
+                desktop_sync=False,
             ),
             {},
         )
@@ -80,6 +81,32 @@ class CodexHookStateTests(unittest.TestCase):
             self.assertTrue(bridge.ensure_app_for_active_project())
             self.assertEqual([Path(active_dir).resolve()], started)
             self.assertEqual("new-thread", bridge.thread_id)
+
+    def test_app_server_enables_experimental_api_for_effort_updates(self):
+        bridge, _ = self.make_bridge()
+        bridge.load_model_efforts = mock.Mock()
+        bridge.start_thread = mock.Mock()
+        client = mock.Mock()
+
+        with mock.patch.object(codex_bridge_module.shutil, "which", return_value="codex"), mock.patch.object(
+            codex_bridge_module, "AppServerClient", return_value=client
+        ):
+            bridge.start_app_server(Path.cwd())
+
+        client.request.assert_called_once_with(
+            "initialize",
+            {
+                "clientInfo": {
+                    "name": "fun_modular_keyboard",
+                    "title": "Fun Modular Keyboard",
+                    "version": "1.0.0",
+                },
+                "capabilities": {"experimentalApi": True},
+            },
+        )
+        client.notify.assert_called_once_with("initialized")
+        bridge.load_model_efforts.assert_called_once_with()
+        bridge.start_thread.assert_called_once_with(Path.cwd().resolve())
 
     def test_hook_events_for_bridge_owned_thread_are_not_double_counted(self):
         bridge, _ = self.make_bridge()
@@ -346,6 +373,7 @@ class CodexHookStateTests(unittest.TestCase):
     def test_status_and_ack_include_reasoning_effort(self):
         bridge, sent = self.make_bridge()
         bridge.current_effort = "high"
+        bridge.desktop_confirmed_effort = "high"
 
         bridge.send_status("READY", force=True)
         bridge.handle_device_line("CX>STATUS|READY|1|HIGH")
@@ -407,54 +435,179 @@ class CodexHookStateTests(unittest.TestCase):
 
         bridge.adjust_effort(1)
 
-        bridge.app.request.assert_called_once_with(
-            "thread/settings/update",
-            {"threadId": "thread-a", "effort": "high"},
-            timeout=10.0,
+        self.assertEqual(
+            [
+                mock.call(
+                    "config/value/write",
+                    {
+                        "keyPath": "model_reasoning_effort",
+                        "value": "high",
+                        "mergeStrategy": "upsert",
+                    },
+                    timeout=10.0,
+                ),
+                mock.call(
+                    "config/read",
+                    {"cwd": str(Path.cwd()), "includeLayers": False},
+                    timeout=10.0,
+                ),
+                mock.call(
+                    "thread/settings/update",
+                    {"threadId": "thread-a", "effort": "high"},
+                    timeout=10.0,
+                ),
+            ],
+            bridge.app.request.call_args_list,
         )
         self.assertEqual("high", bridge.current_effort)
+        self.assertEqual("CX<STATUS|READY|1", sent[-1])
+
+    def test_rotary_effort_keeps_current_value_when_config_write_fails(self):
+        bridge, sent = self.make_bridge()
+        bridge.app = mock.Mock()
+        bridge.app.request.side_effect = codex_bridge_module.AppServerError("write failed")
+        bridge.supported_efforts = ["low", "medium", "high"]
+        bridge.current_effort = "medium"
+
+        bridge.adjust_effort(1)
+
+        self.assertEqual("medium", bridge.current_effort)
+        self.assertEqual("CX<STATUS|ERROR|1", sent[-1])
+
+    def test_repeated_rotary_effort_changes_are_persisted_in_order(self):
+        bridge, sent = self.make_bridge()
+        bridge.app = mock.Mock()
+        bridge.thread_id = None
+        bridge.supported_efforts = ["low", "medium", "high", "xhigh"]
+        bridge.current_effort = "medium"
+
+        bridge.adjust_effort(1)
+        bridge.adjust_effort(1)
+
+        writes = [call for call in bridge.app.request.call_args_list if call.args[0] == "config/value/write"]
+        self.assertEqual("high", writes[0].args[1]["value"])
+        self.assertEqual("xhigh", writes[1].args[1]["value"])
+        self.assertEqual("xhigh", bridge.current_effort)
+        self.assertEqual("CX<STATUS|READY|1", sent[-1])
+
+    def test_disk_default_never_confirms_desktop_picker(self):
+        bridge, sent = self.make_bridge()
+        bridge.current_effort = "ultra"
+        bridge.local_effective_effort = "ultra"
+        bridge.send_status("READY", force=True)
+        self.assertEqual("CX<STATUS|READY|1", sent[-1])
+        bridge.handle_device_line("CX>STATUS|READY|1|ULTRA")
+        self.assertFalse(bridge.status_acknowledged)
+        bridge.handle_device_line("CX>STATUS|READY|1")
+        self.assertTrue(bridge.status_acknowledged)
+
+    def test_stale_gui_confirmation_cannot_confirm_new_selection(self):
+        bridge, sent = self.make_bridge()
+        bridge.current_model = "gpt-5.6-sol"
+        bridge.current_effort = "ultra"
+        bridge.desktop_generation = 2
+        bridge.apply_desktop_result(1, {
+            "status": "confirmed", "confirmed_model": "gpt-5.6-sol",
+            "confirmed_effort": "high", "reason": "picker_readback_matches",
+        })
+        self.assertIsNone(bridge.desktop_confirmed_effort)
+        self.assertEqual([], sent)
+
+    def test_only_matching_gui_model_and_effort_confirm_picker(self):
+        bridge, sent = self.make_bridge()
+        bridge.current_model = "gpt-5.6-sol"
+        bridge.current_effort = "high"
+        bridge.desktop_generation = 1
+        result = {
+            "status": "confirmed", "confirmed_model": "wrong-model",
+            "confirmed_effort": "high", "reason": "picker_readback_matches",
+        }
+        bridge.apply_desktop_result(1, result)
+        self.assertIsNone(bridge.desktop_confirmed_effort)
+        result = dict(result, confirmed_model="gpt-5.6-sol")
+        bridge.apply_desktop_result(1, result)
+        self.assertEqual("high", bridge.desktop_confirmed_effort)
         self.assertEqual("CX<STATUS|READY|1|HIGH", sent[-1])
+
+    def test_gui_picker_does_not_confirm_running_gui_task_effort(self):
+        bridge, _ = self.make_bridge()
+        bridge.desktop_confirmed_effort = "high"
+        bridge.current_effort = "high"
+        bridge.hook_active_turns["gui-session"] = "turn-a"
+        self.assertEqual("CX<STATUS|RUNNING|1", bridge.status_line("RUNNING"))
+
+    def test_config_override_is_reported_separately_from_selection(self):
+        bridge, sent = self.make_bridge()
+        bridge.app = mock.Mock()
+        bridge.app.request.side_effect = [
+            {"status": "okOverridden"},
+            {"config": {"model_reasoning_effort": "low"}},
+        ]
+        bridge.current_effort = "medium"
+        bridge.supported_efforts = ["low", "medium", "high"]
+        bridge.adjust_effort(1)
+        self.assertEqual("high", bridge.current_effort)
+        self.assertEqual("low", bridge.local_effective_effort)
+        self.assertIsNone(bridge.desktop_confirmed_effort)
+        self.assertEqual("CX<STATUS|READY|1", sent[-1])
 
     def test_model_catalog_defines_available_reasoning_efforts(self):
         bridge, _ = self.make_bridge()
         bridge.app = mock.Mock()
-        bridge.app.request.return_value = {
-            "data": [
-                {
+        bridge.app_project = Path.cwd()
+        bridge.app.request.side_effect = [
+            {
+                "config": {
                     "model": "test-model",
-                    "isDefault": True,
-                    "hidden": False,
-                    "defaultReasoningEffort": "high",
-                    "supportedReasoningEfforts": [
-                        {"reasoningEffort": "low", "description": "fast"},
-                        {"reasoningEffort": "high", "description": "deep"},
-                    ],
+                    "model_reasoning_effort": "low",
                 }
-            ]
-        }
+            },
+            {
+                "data": [
+                    {
+                        "model": "test-model",
+                        "isDefault": True,
+                        "hidden": False,
+                        "defaultReasoningEffort": "high",
+                        "supportedReasoningEfforts": [
+                            {"reasoningEffort": "low", "description": "fast"},
+                            {"reasoningEffort": "high", "description": "deep"},
+                        ],
+                    }
+                ]
+            },
+        ]
 
         bridge.load_model_efforts()
 
         self.assertEqual(["low", "high"], bridge.supported_efforts)
-        self.assertEqual("high", bridge.current_effort)
+        self.assertEqual("low", bridge.current_effort)
 
-    def test_new_task_starts_configured_prompt(self):
-        bridge, _ = self.make_bridge()
-        bridge.tasks["NEW_TASK"] = "wait for instructions"
+    def test_new_task_opens_visible_desktop_thread_without_starting_hidden_turn(self):
+        bridge, sent = self.make_bridge()
         bridge.app = mock.Mock()
-        bridge.app.request.return_value = {"turn": {"id": "turn-new"}}
         bridge.app_project = Path.cwd()
         bridge.last_active_project = Path.cwd()
         bridge.thread_id = "thread-a"
-        bridge.current_effort = "high"
 
-        bridge.start_new_task()
+        with mock.patch.object(codex_bridge_module.os, "name", "nt"), mock.patch.object(
+            codex_bridge_module.os, "startfile"
+        ) as startfile:
+            bridge.start_new_task()
 
-        method, params = bridge.app.request.call_args.args
-        self.assertEqual("turn/start", method)
-        self.assertEqual("wait for instructions", params["input"][0]["text"])
-        self.assertEqual("high", params["effort"])
-        self.assertEqual("turn-new", bridge.active_turn_id)
+        startfile.assert_called_once_with(codex_bridge_module.CODEX_NEW_THREAD_URL)
+        bridge.app.request.assert_not_called()
+        self.assertEqual("CX<STATUS|READY|1", sent[-1])
+
+    def test_new_task_reports_error_when_desktop_protocol_fails(self):
+        bridge, sent = self.make_bridge()
+
+        with mock.patch.object(codex_bridge_module.os, "name", "nt"), mock.patch.object(
+            codex_bridge_module.os, "startfile", side_effect=OSError("no protocol")
+        ):
+            bridge.start_new_task()
+
+        self.assertEqual("CX<STATUS|ERROR|1", sent[-1])
 
     def test_stale_status_ack_does_not_acknowledge_new_state(self):
         bridge, _ = self.make_bridge()

@@ -428,7 +428,6 @@ void DisplayTask::run()
     status_bar_set_recording_state(false);
     status_bar_set_volume(5);
     // Display an unknown value until the first real ADC reading arrives.
-    status_bar_set_battery_level(255);
     status_bar_set_wifi_strength(-200);
     // Draw the boot screen and the first GIF frame before revealing the LCD.
     lv_refr_now(nullptr);
@@ -593,20 +592,20 @@ void DisplayTask::UpdateDisplay(const DisplayMessage &msg)
         break;
     }
 
-    case MainCommand::BATTERY_STATUS_UPDATE:
-    {
-        status_bar_set_battery_level(msg.battery_status.percent);
-        LOG_DEBUG("Battery", "Display voltage: %u mV, level: %u%%",
-                  (unsigned)msg.battery_status.voltage_mv,
-                  (unsigned)msg.battery_status.percent);
-        break;
-    }
-
     case MainCommand::CODEX_STATUS_UPDATE:
     {
         const unsigned task_count = msg.codex_task_count == 0 ? 1U : msg.codex_task_count;
         const char *effort_text = CodexEffortText(msg.codex_effort);
         char status_text[32]{};
+        char effort_suffix[16]{};
+        if (msg.codex_effort_mode)
+        {
+            snprintf(
+                effort_suffix,
+                sizeof(effort_suffix),
+                " E:%s",
+                effort_text[0] ? effort_text : "?");
+        }
 
         if (codex_status_ != msg.codex_status)
         {
@@ -616,35 +615,35 @@ void DisplayTask::UpdateDisplay(const DisplayMessage &msg)
         switch (msg.codex_status)
         {
         case CodexStatus::READY:
-            snprintf(status_text, sizeof(status_text), "CODEX READY%s%s", effort_text[0] ? " " : "", effort_text);
+            snprintf(status_text, sizeof(status_text), "CODEX READY%s", effort_suffix);
             ui_MainScreen_set_codex_status(status_text, 0x55D6E8);
             break;
         case CodexStatus::CREATING:
-            snprintf(status_text, sizeof(status_text), "CREATING%s%s", effort_text[0] ? " " : "", effort_text);
+            snprintf(status_text, sizeof(status_text), "CREATING%s", effort_suffix);
             ui_MainScreen_set_codex_status(status_text, 0x4A90E2);
             break;
         case CodexStatus::RUNNING:
-            snprintf(status_text, sizeof(status_text), "RUNNING x%u%s%s", task_count, effort_text[0] ? " " : "", effort_text);
+            snprintf(status_text, sizeof(status_text), "RUNNING x%u%s", task_count, effort_suffix);
             ui_MainScreen_set_codex_status(status_text, 0x4A90E2);
             break;
         case CodexStatus::WAITING_APPROVAL:
-            snprintf(status_text, sizeof(status_text), "APPROVAL x%u%s%s", task_count, effort_text[0] ? " " : "", effort_text);
+            snprintf(status_text, sizeof(status_text), "APPROVAL x%u%s", task_count, effort_suffix);
             ui_MainScreen_set_codex_status(status_text, 0xFFAA33);
             break;
         case CodexStatus::WAITING_INPUT:
-            snprintf(status_text, sizeof(status_text), "WAITING x%u%s%s", task_count, effort_text[0] ? " " : "", effort_text);
+            snprintf(status_text, sizeof(status_text), "WAITING x%u%s", task_count, effort_suffix);
             ui_MainScreen_set_codex_status(status_text, 0xB266FF);
             break;
         case CodexStatus::PAUSING:
-            snprintf(status_text, sizeof(status_text), "PAUSING%s%s", effort_text[0] ? " " : "", effort_text);
+            snprintf(status_text, sizeof(status_text), "PAUSING%s", effort_suffix);
             ui_MainScreen_set_codex_status(status_text, 0xFFC040);
             break;
         case CodexStatus::PAUSED:
-            snprintf(status_text, sizeof(status_text), "PAUSED x%u%s%s", task_count, effort_text[0] ? " " : "", effort_text);
+            snprintf(status_text, sizeof(status_text), "PAUSED x%u%s", task_count, effort_suffix);
             ui_MainScreen_set_codex_status(status_text, 0xFFC040);
             break;
         case CodexStatus::RESUMING:
-            snprintf(status_text, sizeof(status_text), "RESUMING%s%s", effort_text[0] ? " " : "", effort_text);
+            snprintf(status_text, sizeof(status_text), "RESUMING%s", effort_suffix);
             ui_MainScreen_set_codex_status(status_text, 0x4A90E2);
             break;
         case CodexStatus::DONE:

@@ -1,6 +1,5 @@
 #include "ui.h"
 #include "ui_StatusBar.h"
-#include <stdio.h>
 
 
 // 状态栏对象
@@ -11,7 +10,6 @@ static lv_obj_t *workmode_icon = NULL;
 static lv_obj_t *recording_dot = NULL;
 static lv_obj_t *volume_icon = NULL;
 static lv_obj_t *wifi_icon = NULL;
-static lv_obj_t *battery_icon = NULL;
 static lv_timer_t *recording_blink_timer = NULL;
 static bool recording_blink_visible = false;
 
@@ -33,11 +31,7 @@ void ui_StatusBar_init(void)
         return;
     }
 
-    // 定义不同大小的符号字体样式
-    static lv_style_t icon_small_style;
-    lv_style_init(&icon_small_style);
-    lv_style_set_text_font(&icon_small_style, &lv_font_montserrat_18);
-
+    // 定义符号字体样式
     static lv_style_t icon_medium_style;
     lv_style_init(&icon_medium_style);
     lv_style_set_text_font(&icon_medium_style, &lv_font_montserrat_24);
@@ -88,15 +82,6 @@ void ui_StatusBar_init(void)
     lv_obj_align(volume_icon, LV_ALIGN_TOP_LEFT, 325, 10);
     lv_obj_set_style_text_color(volume_icon, lv_color_hex(0x808080), 0);
 
-    battery_icon = lv_label_create(status_bar);
-    lv_label_set_text(battery_icon, LV_SYMBOL_BATTERY_EMPTY " --%");
-    lv_obj_set_width(battery_icon, 68);
-    lv_label_set_long_mode(battery_icon, LV_LABEL_LONG_CLIP);
-    lv_obj_set_style_text_align(battery_icon, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_align(battery_icon, LV_ALIGN_TOP_RIGHT, -5, 12);
-    lv_obj_add_style(battery_icon, &icon_small_style, 0);
-    lv_obj_set_style_text_color(battery_icon, lv_color_hex(0x808080), 0);
-
 }
 // 在status_bar.c中实现
 void ui_StatusBar_show(bool show)
@@ -117,43 +102,6 @@ void status_bar_set_wifi_strength(int strength)
         lv_label_set_text(wifi_icon, LV_SYMBOL_WIFI);
     } else {
         lv_label_set_text(wifi_icon, LV_SYMBOL_WARNING);
-    }
-}
-
-// 更新电池电量
-void status_bar_set_battery_level(uint8_t level)
-{
-    if (battery_icon == NULL) {
-        return;
-    }
-
-    if (level > 100) {
-        lv_label_set_text(battery_icon, LV_SYMBOL_BATTERY_EMPTY " --%");
-        lv_obj_set_style_text_color(battery_icon, lv_color_hex(0x808080), 0);
-        return;
-    }
-
-    const char *symbol = LV_SYMBOL_BATTERY_EMPTY;
-    if (level >= 80) {
-        symbol = LV_SYMBOL_BATTERY_FULL;
-    } else if (level >= 60) {
-        symbol = LV_SYMBOL_BATTERY_3;
-    } else if (level >= 40) {
-        symbol = LV_SYMBOL_BATTERY_2;
-    } else if (level >= 20) {
-        symbol = LV_SYMBOL_BATTERY_1;
-    }
-
-    char battery_text[16] = {0};
-    snprintf(battery_text, sizeof(battery_text), "%s %u%%", symbol, (unsigned)level);
-    lv_label_set_text(battery_icon, battery_text);
-
-    if (level < 20) {
-        lv_obj_set_style_text_color(battery_icon, lv_color_hex(0xEF4444), 0);
-    } else if (level < 50) {
-        lv_obj_set_style_text_color(battery_icon, lv_color_hex(0xF59E0B), 0);
-    } else {
-        lv_obj_set_style_text_color(battery_icon, lv_color_hex(0x22C55E), 0);
     }
 }
 

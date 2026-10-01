@@ -19,9 +19,8 @@
 |--------|------|
 | 禁用扩展模块 | 通过 `ENABLE_EXTENSION_MODULES=0` 关闭 ModA/ModB 的初始化、轮询和相关界面功能，使固件专注于主机数字小键盘。扩展模块代码未删除，后续仍可重新启用。 |
 | 统一源码格式 | 对 `firmware/FunModularKeyboard/src` 下的 C/C++ 源码进行格式统一，不以改变原有功能为目的。 |
-| 添加真实电量显示 | 新增 `BatteryMonitor`，使用 GPIO4 和主板现有的 R5/R10 分压电路采集电池电压；通过多次采样、平滑滤波和锂电池电压曲线估算剩余电量，并每 5 秒更新状态栏电池图标。 |
+| 删除电量检测功能 | 移除 ADC 电压采样、电量估算、校准配置、低电量提示及诊断输出；状态栏不再显示电池图标和百分比。硬件充电功能不受影响。 |
 
-> **电量显示限制：** 当前百分比由电池端电压估算，不是库仑计精确计量。由于 TP4056 的充电状态引脚未连接到 ESP32-S3，固件暂时无法准确区分“充电中”和“已充满”。
 
 ---
 
@@ -106,7 +105,7 @@
 - **TFT LCD + LVGL** — 提供丰富的图形界面和多主题支持
 - **16 颗 WS2812B RGB LED** — 支持彩虹、火焰、流星和脉冲等灯效
 - **音乐频谱可视化** — 实时显示 FFT 音频频谱动画
-- **状态栏** — 显示时钟、电量、连接状态和当前键位配置等信息
+- **状态栏** — 显示连接模式、WiFi、音量和录音状态，不再显示电量
 
 ### 🧲 扩展模块
 
@@ -131,7 +130,6 @@ FunModularKeyboard-Numpad/
 │   │   │   ├── MatrixScanner.cpp/h   # 按键矩阵扫描
 │   │   │   ├── RotaryEncoder.cpp/h   # 旋转编码器驱动
 │   │   │   ├── RGBLightControl.cpp/h # RGB LED 灯效控制
-│   │   │   ├── BatteryMonitor.cpp/h   # 电池电压采样与电量估算
 │   │   │   ├── USBKeyboardImpl.cpp/h # USB HID 键盘实现
 │   │   │   ├── BLEKeyboardImpl.cpp/h # BLE 键盘实现
 │   │   │   ├── VoiceRecognizer.cpp/h # 百度 ASR 语音识别
@@ -259,7 +257,7 @@ pio run --target upload
 | 编码器 CLK | 5 |
 | 编码器 DT | 21 |
 | 编码器按键 SW | 9 |
-| 电池电压 ADC | 4 |
+| 电池电压 ADC（当前固件未使用） | 4 |
 | I²C SDA | 15 |
 | I²C SCL | 8 |
 | 按键矩阵行 | 48, 10, 47, 33, 14 |

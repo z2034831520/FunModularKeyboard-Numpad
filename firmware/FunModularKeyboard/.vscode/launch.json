@@ -12,9 +12,9 @@
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug",
-            "executable": "F:/New_Project/FunModularKeyboard-OPEN/firmware/FunModularKeyboard/.pio/build/esp32s3minin4r2/firmware.elf",
+            "executable": "D:/Numpad/FunModularKeyboard-Numpad/firmware/FunModularKeyboard/.pio/build/esp32s3minin4r2/firmware.elf",
             "projectEnvName": "esp32s3minin4r2",
-            "toolchainBinDir": "C:/Users/wl/.platformio/packages/toolchain-xtensa-esp32s3/bin",
+            "toolchainBinDir": "C:/Users/zhou/.platformio/packages/toolchain-xtensa-esp32s3/bin",
             "internalConsoleOptions": "openOnSessionStart",
             "preLaunchTask": {
                 "type": "PlatformIO",
@@ -25,18 +25,18 @@
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug (skip Pre-Debug)",
-            "executable": "F:/New_Project/FunModularKeyboard-OPEN/firmware/FunModularKeyboard/.pio/build/esp32s3minin4r2/firmware.elf",
+            "executable": "D:/Numpad/FunModularKeyboard-Numpad/firmware/FunModularKeyboard/.pio/build/esp32s3minin4r2/firmware.elf",
             "projectEnvName": "esp32s3minin4r2",
-            "toolchainBinDir": "C:/Users/wl/.platformio/packages/toolchain-xtensa-esp32s3/bin",
+            "toolchainBinDir": "C:/Users/zhou/.platformio/packages/toolchain-xtensa-esp32s3/bin",
             "internalConsoleOptions": "openOnSessionStart"
         },
         {
             "type": "platformio-debug",
             "request": "launch",
             "name": "PIO Debug (without uploading)",
-            "executable": "F:/New_Project/FunModularKeyboard-OPEN/firmware/FunModularKeyboard/.pio/build/esp32s3minin4r2/firmware.elf",
+            "executable": "D:/Numpad/FunModularKeyboard-Numpad/firmware/FunModularKeyboard/.pio/build/esp32s3minin4r2/firmware.elf",
             "projectEnvName": "esp32s3minin4r2",
-            "toolchainBinDir": "C:/Users/wl/.platformio/packages/toolchain-xtensa-esp32s3/bin",
+            "toolchainBinDir": "C:/Users/zhou/.platformio/packages/toolchain-xtensa-esp32s3/bin",
             "internalConsoleOptions": "openOnSessionStart",
             "loadMode": "manual"
         }

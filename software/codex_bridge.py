@@ -17,6 +17,11 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from .codex_desktop import inspect_picker
+except ImportError:  # Direct script execution from the installed directory.
+    from codex_desktop import inspect_picker
+
+try:
     import serial
     from serial.tools import list_ports
 except ImportError:  # Keep --dry-run useful before dependencies are installed.
@@ -33,6 +38,7 @@ DEFAULT_HOOK_STALE_TIMEOUT_SECONDS = 600.0
 DEFAULT_HOOK_HOST = "127.0.0.1"
 DEFAULT_HOOK_PORT = 18765
 MAX_HOOK_PACKET_BYTES = 8192
+CODEX_NEW_THREAD_URL = "codex://threads/new"
 ESPRESSIF_USB_VID = 0x303A
 CH340_USB_VID = 0x1A86
 CH340_USB_PID = 0x7523
@@ -159,6 +165,17 @@ class CodexKeyboardBridge:
         self.last_prompt: str | None = None
         self.supported_efforts: list[str] = []
         self.current_effort: str | None = None
+        self.current_model: str | None = None
+        self.local_effective_effort: str | None = None
+        self.active_turn_effort: str | None = None
+        self.desktop_confirmed_effort: str | None = None
+        self.desktop_result: dict[str, Any] = {"status": "unverified", "reason": "not_probed"}
+        self.desktop_generation = 0
+        self.desktop_jobs: queue.Queue[tuple[int, str | None, str | None, bool]] = queue.Queue(maxsize=1)
+        self.desktop_results: queue.Queue[tuple[int, dict[str, Any]]] = queue.Queue()
+        self.desktop_worker: threading.Thread | None = None
+        self.last_desktop_probe = 0.0
+        self.effort_report_path = getattr(args, "effort_report", None)
         self.pending_approval: tuple[int | str, str, dict[str, Any]] | None = None
         self.pending_user_input_request_id: int | str | None = None
         self.serial_port: Any = None
@@ -194,7 +211,17 @@ class CodexKeyboardBridge:
         self.app_project = project
         self.app.request(
             "initialize",
-            {"clientInfo": {"name": "fun_modular_keyboard", "title": "Fun Modular Keyboard", "version": "1.0.0"}},
+            {
+                "clientInfo": {
+                    "name": "fun_modular_keyboard",
+                    "title": "Fun Modular Keyboard",
+                    "version": "1.0.0",
+                },
+                # thread/settings/update is an experimental App Server method.
+                # Without this capability the server rejects every rotary
+                # effort change even for the bridge-owned thread.
+                "capabilities": {"experimentalApi": True},
+            },
         )
         self.app.notify("initialized")
         self.load_model_efforts()
@@ -203,16 +230,50 @@ class CodexKeyboardBridge:
     def load_model_efforts(self) -> None:
         if self.app is None:
             return
+
+        configured_model: str | None = None
+        configured_effort: str | None = None
+        try:
+            config_result = self.app.request(
+                "config/read",
+                {
+                    "cwd": str(self.app_project or self.args.project),
+                    "includeLayers": False,
+                },
+            )
+            effective_config = config_result.get("config") or {}
+            model_value = effective_config.get("model")
+            effort_value = effective_config.get("model_reasoning_effort")
+            if isinstance(model_value, str) and model_value.strip():
+                configured_model = model_value.strip()
+                self.current_model = configured_model
+            if isinstance(effort_value, str):
+                normalized_effort = effort_value.strip().lower()
+                if normalized_effort in KNOWN_REASONING_EFFORTS:
+                    configured_effort = normalized_effort
+                    self.local_effective_effort = configured_effort
+        except AppServerError as exc:
+            print(f"Unable to read effective Codex configuration: {exc}", file=sys.stderr)
+
         try:
             result = self.app.request("model/list", {"includeHidden": False})
         except AppServerError as exc:
             print(f"Unable to query model reasoning efforts: {exc}; using safe defaults", file=sys.stderr)
             self.supported_efforts = list(DEFAULT_REASONING_EFFORTS)
-            self.current_effort = "medium"
+            self.current_effort = (
+                configured_effort
+                if configured_effort in self.supported_efforts
+                else "medium"
+            )
             return
 
         models = result.get("data") or []
-        selected = next((model for model in models if model.get("isDefault")), None)
+        selected = next(
+            (model for model in models if model.get("model") == configured_model),
+            None,
+        )
+        if selected is None:
+            selected = next((model for model in models if model.get("isDefault")), None)
         if selected is None:
             selected = next((model for model in models if not model.get("hidden", False)), None)
 
@@ -229,9 +290,12 @@ class CodexKeyboardBridge:
                 self.current_effort = default_effort.lower()
 
         self.supported_efforts = efforts or list(DEFAULT_REASONING_EFFORTS)
+        if configured_effort in self.supported_efforts:
+            self.current_effort = configured_effort
         if self.current_effort not in self.supported_efforts:
             self.current_effort = "medium" if "medium" in self.supported_efforts else self.supported_efforts[0]
         model_name = selected.get("model", "default") if isinstance(selected, dict) else "default"
+        self.current_model = model_name
         print(
             f"Codex model={model_name} effort={self.current_effort} "
             f"supported={','.join(self.supported_efforts)}"
@@ -309,8 +373,98 @@ class CodexKeyboardBridge:
     def status_line(self, status: str | None = None, count: int | None = None) -> str:
         status = status or self.current_status
         count = self.current_status_count if count is None else count
-        suffix = f"|{self.current_effort.upper()}" if self.current_effort else ""
+        effort = self.visible_effort(status)
+        suffix = f"|{effort.upper()}" if effort else ""
         return f"CX<STATUS|{status}|{count}{suffix}"
+
+    def visible_effort(self, status: str) -> str | None:
+        # Aggregated GUI lifecycle hooks don't contain the runtime's effort.
+        # A requested/default value must never be shown as task confirmation.
+        if status == "READY" and not self.hook_active_turns:
+            return self.desktop_confirmed_effort
+        return None
+
+    def write_effort_report(self) -> None:
+        report = {
+            "selected_model": self.current_model,
+            "selected_effort": self.current_effort,
+            "local_effective_effort": self.local_effective_effort,
+            "gui_picker_confirmed_effort": self.desktop_confirmed_effort,
+            "desktop": self.desktop_result,
+            "bridge_turn_requested_effort": self.active_turn_effort if self.active_turn_id else None,
+            "task_runtime_effort_verified": False,
+            "updated_at": time.time(),
+        }
+        if self.effort_report_path is not None:
+            path = Path(self.effort_report_path)
+            temporary = path.with_suffix(path.suffix + ".tmp")
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                temporary.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+                temporary.replace(path)
+            except OSError:
+                print("[codex-effort] unable to save diagnostic report")
+        print(
+            f"[codex-effort] selected={self.current_effort or '?'} "
+            f"local_effective={self.local_effective_effort or '?'} "
+            f"gui={self.desktop_confirmed_effort or 'UNVERIFIED'} "
+            f"reason={self.desktop_result.get('reason', 'unknown')} "
+            f"saved_host_hint={self.desktop_result.get('saved_host_hint', 'unknown')}"
+        )
+
+    def request_desktop_probe(self, *, sync: bool = False) -> None:
+        self.desktop_generation += 1
+        self.desktop_confirmed_effort = None
+        self.desktop_result = {"status": "unverified", "reason": "probe_pending", "runtime_verified": False}
+        self.last_desktop_probe = time.monotonic()
+        if not getattr(self.args, "desktop_sync", True):
+            self.desktop_result["reason"] = "desktop_sync_disabled"
+            self.write_effort_report()
+            return
+        try:
+            self.desktop_jobs.get_nowait()
+        except queue.Empty:
+            pass
+        self.desktop_jobs.put_nowait((self.desktop_generation, self.current_model, self.current_effort, sync))
+        if self.desktop_worker is None:
+            self.desktop_worker = threading.Thread(target=self.desktop_probe_worker, daemon=True)
+            self.desktop_worker.start()
+        self.write_effort_report()
+
+    def desktop_probe_worker(self) -> None:
+        while True:
+            generation, model, effort, sync = self.desktop_jobs.get()
+            try:
+                if sync:
+                    time.sleep(1.0)  # Let the registered new-task URL finish navigation.
+                if generation != self.desktop_generation:
+                    continue
+                result = inspect_picker(model, effort, sync=sync)
+            except Exception:
+                result = {"status": "unsupported", "reason": "probe_worker_failed"}
+            self.desktop_results.put((generation, result))
+
+    def apply_desktop_result(self, generation: int, result: dict[str, Any]) -> None:
+        if generation != self.desktop_generation:
+            return  # An older probe must not confirm a newer selection.
+        self.desktop_result = result
+        self.desktop_confirmed_effort = None
+        if (
+            result.get("status") == "confirmed"
+            and result.get("confirmed_model") == self.current_model
+            and result.get("confirmed_effort") == self.current_effort
+        ):
+            self.desktop_confirmed_effort = self.current_effort
+        self.write_effort_report()
+        self.refresh_visible_status(force=True)
+
+    def drain_desktop_results(self) -> None:
+        while True:
+            try:
+                generation, result = self.desktop_results.get_nowait()
+            except queue.Empty:
+                return
+            self.apply_desktop_result(generation, result)
 
     def has_active_turns(self) -> bool:
         return self.active_turn_id is not None or bool(self.hook_active_turns)
@@ -547,11 +701,8 @@ class CodexKeyboardBridge:
                     count = int(parts[2])
                 except ValueError:
                     return
-                effort_matches = (
-                    self.current_effort is None
-                    or (len(parts) == 4 and parts[3].lower() == self.current_effort)
-                )
-                if parts[1] == self.current_status and count == self.current_status_count and effort_matches:
+                expected = self.status_line().replace("CX<STATUS", "CX>STATUS", 1)
+                if line == expected:
                     self.status_acknowledged = True
         elif line == "CX>TASK|ANALYZE":
             self.start_analysis()
@@ -644,6 +795,7 @@ class CodexKeyboardBridge:
                 params["effort"] = self.current_effort
             result = self.app.request("turn/start", params)
             self.active_turn_id = result["turn"]["id"]
+            self.active_turn_effort = self.current_effort
             self.thread_has_task = True
             self.bridge_paused = False
             self.last_prompt = prompt
@@ -658,22 +810,25 @@ class CodexKeyboardBridge:
             return False
 
     def start_new_task(self) -> None:
-        if not self.ensure_bridge_idle() or not self.ensure_app_for_active_project():
-            return
-        if self.app is None or self.app_project is None:
-            return
-        prompt = self.tasks.get("NEW_TASK") or self.tasks.get("ANALYZE")
-        if not prompt:
-            print("NEW_TASK task is missing from the task file", file=sys.stderr)
+        # App Server threads are owned by this background bridge and are not
+        # guaranteed to appear in the desktop UI. K10 is intended to create a
+        # task the user can actually see, so hand it directly to the desktop
+        # app's registered new-thread protocol. Lifecycle hooks will update the
+        # keyboard after the user submits the visible task.
+        if os.name != "nt" or not hasattr(os, "startfile"):
+            print("Opening a new Codex desktop task is supported only on Windows", file=sys.stderr)
             self.send_status("ERROR")
             return
         try:
             self.send_status("CREATING", force=True)
-            if self.thread_has_task or self.bridge_paused:
-                self.start_thread(self.app_project)
-            self.start_prompt(prompt, operation="start a new task")
-        except (AppServerError, KeyError) as exc:
-            print(f"Unable to create a new task: {exc}", file=sys.stderr)
+            os.startfile(CODEX_NEW_THREAD_URL)  # type: ignore[attr-defined]
+            print(f"Opened visible Codex desktop task: {CODEX_NEW_THREAD_URL}")
+            # Never navigate, send prompts or automate approvals. Only try a
+            # semantic picker selection on the newly opened idle task page.
+            self.request_desktop_probe(sync=not self.has_active_turns())
+            self.refresh_visible_status(force=True)
+        except OSError as exc:
+            print(f"Unable to open a new Codex desktop task: {exc}", file=sys.stderr)
             self.send_status("ERROR")
 
     def start_analysis(self) -> None:
@@ -782,7 +937,50 @@ class CodexKeyboardBridge:
         current = self.current_effort if self.current_effort in efforts else efforts[0]
         index = efforts.index(current)
         selected = efforts[(index + (1 if direction > 0 else -1)) % len(efforts)]
-        if self.app is not None and self.thread_id is not None:
+        if self.app is None:
+            self.send_status("ERROR")
+            return
+
+        try:
+            write_result = self.app.request(
+                "config/value/write",
+                {
+                    "keyPath": "model_reasoning_effort",
+                    "value": selected,
+                    "mergeStrategy": "upsert",
+                },
+                timeout=10.0,
+            )
+        except AppServerError as exc:
+            print(f"Unable to save default reasoning effort: {exc}", file=sys.stderr)
+            self.desktop_confirmed_effort = None
+            self.desktop_result = {"status": "unverified", "reason": "config_write_failed"}
+            self.write_effort_report()
+            self.send_status("ERROR", force=True)
+            return
+
+        if write_result.get("status") == "okOverridden":
+            print(
+                "Reasoning effort was saved, but a higher-priority configuration layer overrides it",
+                file=sys.stderr,
+            )
+
+        self.current_effort = selected
+        self.desktop_confirmed_effort = None
+        self.local_effective_effort = None
+        try:
+            config_result = self.app.request(
+                "config/read",
+                {"cwd": str(self.app_project or self.args.project), "includeLayers": False},
+                timeout=10.0,
+            )
+            readback = (config_result.get("config") or {}).get("model_reasoning_effort")
+            if isinstance(readback, str) and readback.lower() in KNOWN_REASONING_EFFORTS:
+                self.local_effective_effort = readback.lower()
+        except AppServerError:
+            print("[codex-effort] local configuration readback unavailable")
+
+        if self.thread_id is not None:
             try:
                 self.app.request(
                     "thread/settings/update",
@@ -790,13 +988,16 @@ class CodexKeyboardBridge:
                     timeout=10.0,
                 )
             except AppServerError as exc:
-                print(f"Unable to change reasoning effort: {exc}", file=sys.stderr)
-                self.send_status("ERROR")
-                return
-        self.current_effort = selected
+                print(
+                    f"Default effort was saved, but the bridge-owned thread could not be updated: {exc}",
+                    file=sys.stderr,
+                )
+        self.request_desktop_probe()  # Read only; do not modify an existing GUI task.
         self.refresh_visible_status(force=True)
-        applies = "next turn" if self.active_turn_id is not None else "subsequent turns"
-        print(f"Reasoning effort changed to {selected} ({applies})")
+        print(
+            f"Selected reasoning effort changed to {selected}; "
+            "desktop picker and running GUI tasks remain unverified until read back"
+        )
 
     def handle_app_event(self, event: dict[str, Any]) -> None:
         method = event.get("method", "")
@@ -860,6 +1061,7 @@ class CodexKeyboardBridge:
 
     def run(self) -> None:
         self.start_app_server()
+        self.request_desktop_probe()
         self.start_hook_listener()
         while True:
             try:
@@ -867,6 +1069,9 @@ class CodexKeyboardBridge:
                     self.connect_serial()
 
                 now = time.monotonic()
+                self.drain_desktop_results()
+                if now - self.last_desktop_probe >= 15.0:
+                    self.request_desktop_probe()
                 self.expire_stale_hook_sessions(now)
                 if now - self.last_ping >= PING_INTERVAL_SECONDS:
                     self.send_line("CX<PING")
@@ -892,8 +1097,8 @@ class CodexKeyboardBridge:
                     except queue.Empty:
                         break
                     self.handle_app_event(event)
-            except (serial.SerialException, OSError) as exc:
-                print(f"Serial connection lost: {exc}; retrying...", file=sys.stderr)
+            except (serial.SerialException, OSError, RuntimeError) as exc:
+                print(f"Serial connection unavailable: {exc}; retrying...", file=sys.stderr)
                 if self.serial_port is not None:
                     try:
                         self.serial_port.close()
@@ -989,6 +1194,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tasks", type=Path, default=software_dir / "codex_tasks.json")
     parser.add_argument("--codex-bin", default="codex")
     parser.add_argument("--open-app", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--desktop-sync", action=argparse.BooleanOptionalAction, default=True,
+                        help="Try verified semantic picker control on K10; never submit tasks")
+    parser.add_argument("--desktop-probe", action="store_true", help="Read-only desktop compatibility check, without serial or App Server")
+    parser.add_argument("--probe-model", default=None)
+    parser.add_argument("--probe-effort", choices=KNOWN_REASONING_EFFORTS)
+    parser.add_argument("--effort-report", type=Path,
+                        default=Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))) / "keyboard-bridge" / "effort-state.json")
     parser.add_argument("--hook-host", default=DEFAULT_HOOK_HOST)
     parser.add_argument("--hook-port", type=int, default=DEFAULT_HOOK_PORT)
     parser.add_argument(
@@ -1007,6 +1219,9 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     try:
+        if args.desktop_probe:
+            print(json.dumps(inspect_picker(args.probe_model, args.probe_effort), ensure_ascii=False, indent=2))
+            return 0
         if not args.project.is_dir():
             raise ValueError(f"Project directory does not exist: {args.project}")
         tasks = load_tasks(args.tasks)
